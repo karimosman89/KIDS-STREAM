@@ -1,0 +1,45 @@
+415:             const existingIds = new Set(prev.map((p: any) => p.id));
+489:        setProfiles(prev => prev.map(p => p.id === data.profile.id ? data.profile : p));
+917:        setVideos(prev => prev.map(v => v.id === videoId ? { ...v, rating: data.rating } : v));
+949:      genres: newVideoGenres.split(',').map(g => g.trim().toLowerCase()),
+951:        dubbed: newVideoDubbed.split(',').map(g => g.trim().toLowerCase()),
+952:        subtitled: newVideoSubtitles.split(',').map(g => g.trim().toLowerCase())
+954:      tags: newVideoGenres.split(',').map(g => g.trim().toLowerCase()).concat([newVideoAge])
+1086:        setProfiles(prev => prev.map(p => p.id === selectedProfileToEdit.id ? data.profile : p));
+1168:        setProfiles(prev => prev.map(p => p.id === data.profile.id ? data.profile : p));
+1189:        setProfiles(prev => prev.map(p => p.id === data.profile.id ? data.profile : p));
+1256:          setProfiles(prev => prev.map(p => p.id === data.profile.id ? data.profile : p));
+1355:            setProfiles(prev => prev.map(p => p.id === updatedProfile.id ? updatedProfile : p));
+1549:      .map(id => videos.find(v => v.id === id))
+1558:    const scored = candidates.map(v => {
+1604:      {ads.filter(ad => ad.isActive && ad.type === 'banner').map(ad => (
+1633:              {profiles.map(p => {
+1879:                      {videos.slice(0, 4).map((v, i) => (
+1926:                    {["all", "adventure", "learning", "comedy", "science", "sports", "art"].map(gen => (
+2304:                                  {activeVideo.languageOptions?.dubbed?.map(d => (
+2319:                                  {activeVideo.languageOptions?.subtitled?.map(s => (
+2487:                            {episodes.map(ep => {
+2600:                            {watchPartyRoom?.users?.map((usr: any) => (
+2625:                              watchPartyRoom.messages.map((msg: any) => {
+2715:                            {[1, 2, 3, 4, 5].map((stars) => {
+2786:                      {ads.filter(ad => ad.isActive && ad.type === 'sidebar').slice(0, 1).map(ad => (
+2821:                              {related.map(vid => (
+2859:                                      {(vid.genres || []).slice(0, 2).map((g) => (
+2905:                          {comments.map(c => (
+2940:                          {filteredVideos.map(vid => (
+3123:                            {recommendations.map(({ video, originalWatched }) => (
+3189:                      {videos.slice(0, 6).map(vid => (
+3480:                            {downloadsList.map((item) => (
+3716:                            {videos.map(v => (
+3794:                        {["movies", "episodes", "users_profiles", "sub_payments", "logs_analytics"].map(tab => (
+3966:                          ].map(theme => {
+4065:                            {dbSettings.customBlockedKeywords.map((word: string) => (
+4159:                        {profiles.map(p => (
+4254:                                {(['blob', 'box', 'bunny', 'cat', 'star'] as const).map(shape => (
+4282:                                ].map(col => (
+4301:                                {(['sparkle', 'cool', 'wink', 'joy', 'glasses'] as const).map(eyeKind => (
+4322:                                {(['smile', 'tongue', 'whiskers', 'vamp', 'mustache'] as const).map(mouthKind => (
+4343:                                {(['crown', 'wizard', 'party', 'headphones', 'space', 'flower', 'none'] as const).map(acc => (
+4414:                        {ads.map(ad => (
+4447:                        {logs.map(log => (
+4647:                      {recList.map(item => (

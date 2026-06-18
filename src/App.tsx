@@ -1,0 +1,4976 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Play, Pause, Volume2, RotateCcw, Monitor, Download, Maximize, 
+  Search, Mic, Globe, Users, Shield, Plus, Heart, Watch, Star, Check, 
+  Tv, Radio, ListMusic, Layers, ChevronRight, Settings, Info, Dumbbell, 
+  Sparkles, Sliders, LogOut, CheckCircle, Database, AlertCircle, Trash2, 
+  HelpCircle, ChevronLeft, ArrowRight, Eye, Film, BookOpen, MessageSquare,
+  FastForward, Send, Link, Crown, X
+} from 'lucide-react';
+import { TRANSLATIONS, SupportedLanguage } from './locale';
+import { VideoContent, Episode, Comment, SystemLog, Advertisement, UserProfile, CustomAvatarConfig } from './types';
+import { CustomAvatarRenderer } from './components/CustomAvatarRenderer';
+
+export default function App() {
+  // State management
+  const [lang, setLang] = useState<SupportedLanguage>('en');
+  const [currentProfile, setCurrentProfile] = useState<UserProfile | null>(null);
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  
+  // Real-Time Watch Party States & Refs
+  const [watchPartyId, setWatchPartyId] = useState<string | null>(null);
+  const [watchPartyRoom, setWatchPartyRoom] = useState<any | null>(null);
+  const [chatInputText, setChatInputText] = useState<string>('');
+  const [watchPartyToast, setWatchPartyToast] = useState<string | null>(null);
+  const [joinCodeInput, setJoinCodeInput] = useState<string>('');
+  const [showJoinPartyInput, setShowJoinPartyInput] = useState<boolean>(false);
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'chat' | 'reviews'>('chat');
+  
+  const wsRef = useRef<WebSocket | null>(null);
+  const ignoreNextEpisodeChangeRef = useRef<boolean>(false);
+  
+  // Navigation
+  const [activeTab, setActiveTab] = useState<'home' | 'movies' | 'series' | 'anime' | 'educational' | 'favorites' | 'subscriptions' | 'parent-portal' | 'downloads'>('home');
+  const [ageFilter, setAgeFilter] = useState<string>('all');
+  const [selectedGenre, setSelectedGenre] = useState<string>('all');
+  
+  // Videos & Search
+  const [videos, setVideos] = useState<VideoContent[]>([]);
+  const [activeVideo, setActiveVideo] = useState<VideoContent | null>(null);
+  const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
+  const [episodes, setEpisodes] = useState<Episode[]>([]);
+  
+  // Computed property to identify the next episode for autoplay
+  const currentEpisodeIndex = episodes.findIndex(ep => ep.id === currentEpisode?.id);
+  const nextEpisode = currentEpisodeIndex !== -1 && currentEpisodeIndex < episodes.length - 1 ? episodes[currentEpisodeIndex + 1] : null;
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  
+  // AI Companion & Smart Search states
+  const [aiPrompt, setAiPrompt] = useState<string>('');
+  const [aiIsLoading, setAiIsLoading] = useState<boolean>(false);
+  const [aiResponse, setAiResponse] = useState<{ recommendedIds?: string[]; explanation?: string; mode?: string } | null>(null);
+  const [showAiModal, setShowAiModal] = useState<boolean>(false);
+  const [recList, setRecList] = useState<VideoContent[]>([]);
+  
+  // Video Player custom simulator states
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [videoProgress, setVideoProgress] = useState<number>(0); 
+  const [episodeProgressMap, setEpisodeProgressMap] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('watchPartyEpisodeProgress');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+  const [playerSpeed, setPlayerSpeed] = useState<number>(1);
+  const [playerQuality, setPlayerQuality] = useState<string>('1080p');
+  const [selectedAudio, setSelectedAudio] = useState<string>('en');
+  const [selectedSubtitle, setSelectedSubtitle] = useState<string>('en');
+  const [downloadState, setDownloadState] = useState<'none' | 'loading' | 'done'>('none');
+  const [seriesDownloadState, setSeriesDownloadState] = useState<'none' | 'loading' | 'done'>('none');
+  const [seriesDownloadProgress, setSeriesDownloadProgress] = useState<number>(0);
+  const [currentDownloadEpisodeIndex, setCurrentDownloadEpisodeIndex] = useState<number>(0);
+  const [isPip, setIsPip] = useState<boolean>(false);
+  const [isCasting, setIsCasting] = useState<boolean>(false);
+  
+  // Social Interactions (Comments)
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newCommentText, setNewCommentText] = useState<string>('');
+  
+  // Favorites list
+  const [favorites, setFavorites] = useState<string[]>(['v1', 'v5']);
+  
+  // Parent & Admin states
+  const [isParentAuthorized, setIsParentAuthorized] = useState<boolean>(false);
+  const [showParentPinModal, setShowParentPinModal] = useState<boolean>(false);
+  const [pinInput, setPinInput] = useState<string>('');
+  const [pinError, setPinError] = useState<boolean>(false);
+  const [logs, setLogs] = useState<SystemLog[]>([]);
+  const [ads, setAds] = useState<Advertisement[]>([]);
+  const [dbSettings, setDbSettings] = useState<any>({ parentPin: '1234' });
+  
+  // Admin form inputs
+  const [newVideoTitleAr, setNewVideoTitleAr] = useState<string>('');
+  const [newVideoTitleEn, setNewVideoTitleEn] = useState<string>('');
+  const [newVideoDescAr, setNewVideoDescAr] = useState<string>('');
+  const [newVideoDescEn, setNewVideoDescEn] = useState<string>('');
+  const [newVideoPoster, setNewVideoPoster] = useState<string>('');
+  const [newVideoBanner, setNewVideoBanner] = useState<string>('');
+  const [newVideoType, setNewVideoType] = useState<'movie' | 'series' | 'anime' | 'educational'>('movie');
+  const [newVideoAge, setNewVideoAge] = useState<'all' | '3-5' | '6-8' | '9-12'>('all');
+  const [newVideoGenres, setNewVideoGenres] = useState<string>('adventure, comedy');
+  const [newVideoDur, setNewVideoDur] = useState<string>('95 min');
+  const [newVideoDubbed, setNewVideoDubbed] = useState<string>('ar, en');
+  const [newVideoSubtitles, setNewVideoSubtitles] = useState<string>('ar, en, fr');
+
+  // New Episode inputs
+  const [newEpTitleAr, setNewEpTitleAr] = useState<string>('');
+  const [newEpTitleEn, setNewEpTitleEn] = useState<string>('');
+  const [newEpDescAr, setNewEpDescAr] = useState<string>('');
+  const [newEpDescEn, setNewEpDescEn] = useState<string>('');
+  const [newEpSeriesId, setNewEpSeriesId] = useState<string>('v1');
+  const [newEpNum, setNewEpNum] = useState<number>(3);
+  const [newEpThumb, setNewEpThumb] = useState<string>('');
+  const [newEpUrl, setNewEpUrl] = useState<string>('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4');
+
+  // Profile creation
+  const [newProfileName, setNewProfileName] = useState<string>('');
+  const [newProfileAge, setNewProfileAge] = useState<number>(6);
+  const [newProfileAvatar, setNewProfileAvatar] = useState<string>('🐸');
+  
+  // Custom blocked keywords state for Parent restrictions
+  const [customKeywordInput, setCustomKeywordInput] = useState<string>('');
+  
+  // Database Schemas state for parental exploration view
+  const [activeSchemaTab, setActiveSchemaTab] = useState<string>('movies');
+
+  // Voice Navigation States
+  const [isVoiceActive, setIsVoiceActive] = useState<boolean>(false);
+  const [voiceTranscript, setVoiceTranscript] = useState<string>('');
+  const [voiceStatus, setVoiceStatus] = useState<string>('idle'); // 'idle' | 'listening' | 'heard' | 'error'
+  const [speechSupported, setSpeechSupported] = useState<boolean>(true);
+  const recognitionRef = useRef<any>(null);
+
+  // Interactive Adventure Rating States
+  const [userRatings, setUserRatings] = useState<Record<string, number>>({});
+  const [hoveredStars, setHoveredStars] = useState<number | null>(null);
+  const [ratingSubmitLoading, setRatingSubmitLoading] = useState<string | null>(null); // maps videoId being rated
+  const [ratingSuccessMessage, setRatingSuccessMessage] = useState<string | null>(null); // maps videoId showing success
+
+  // Video player enhancement states (Skip Intro & Autoplay Next)
+  const [playerCurrentTime, setPlayerCurrentTime] = useState<number>(0);
+  const [playerDuration, setPlayerDuration] = useState<number>(0);
+  const [autoplayCancelled, setAutoplayCancelled] = useState<boolean>(false);
+  const [showSkipIntroToast, setShowSkipIntroToast] = useState<boolean>(false);
+
+  useEffect(() => {
+    setAutoplayCancelled(false);
+    setShowSkipIntroToast(false);
+  }, [currentEpisode?.id]);
+
+  // Interactive Avatar Builder States
+  const [selectedProfileToEdit, setSelectedProfileToEdit] = useState<UserProfile | null>(null);
+  const [editingAvatarConfig, setEditingAvatarConfig] = useState<CustomAvatarConfig | null>(null);
+  const [saveAvatarLoading, setSaveAvatarLoading] = useState<boolean>(false);
+  const [saveAvatarSuccess, setSaveAvatarSuccess] = useState<boolean>(false);
+
+  // Helper system logging inside clean state
+  const addVoiceActivityLog = async (action: string, detail: string) => {
+    try {
+      await fetch('/api/logs/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, detail })
+      });
+      if (isParentAuthorized) {
+        const res = await fetch('/api/logs');
+        const data = await res.json();
+        if (data.success) setLogs(data.logs);
+      }
+    } catch (err) {
+      console.error("Failed to add speech activity log:", err);
+    }
+  };
+
+  // Process voice navigation commands
+  const processVoiceCommand = (text: string) => {
+    const cleanText = text.toLowerCase().trim();
+
+    // 1. Play / Pause
+    if (cleanText === 'play' || cleanText === 'start' || cleanText.includes('play') || cleanText.includes('تشغيل') || cleanText.includes('شغل')) {
+      setIsPlaying(true);
+      addVoiceActivityLog('Voice Navigation', 'Command: "Play" triggered video player.');
+      return;
+    }
+    if (cleanText === 'pause' || cleanText === 'stop' || cleanText.includes('pause') || cleanText.includes('إيقاف') || cleanText.includes('أوقف')) {
+      setIsPlaying(false);
+      addVoiceActivityLog('Voice Navigation', 'Command: "Pause" paused video player.');
+      return;
+    }
+
+    // 2. Tab Navigation
+    if (cleanText === 'home' || cleanText === 'go home' || cleanText.includes('go home') || cleanText.includes('back home') || cleanText === 'الرئيسية' || cleanText.includes('الرئيسية')) {
+      setActiveTab('home');
+      setSearchQuery('');
+      addVoiceActivityLog('Voice Navigation', 'Command: Navigated to Home screen.');
+      return;
+    }
+    if (cleanText.includes('movie') || cleanText === 'movies' || cleanText.includes('أفلام') || cleanText.includes('فيلم')) {
+      setActiveTab('movies');
+      addVoiceActivityLog('Voice Navigation', 'Command: Navigated to Movies section.');
+      return;
+    }
+    if (cleanText.includes('series') || cleanText === 'shows' || cleanText.includes('مسلسلات') || cleanText.includes('مسلسل')) {
+      setActiveTab('series');
+      addVoiceActivityLog('Voice Navigation', 'Command: Navigated to Series section.');
+      return;
+    }
+    if (cleanText.includes('anime') || cleanText === 'cartoon' || cleanText.includes('أنمي') || cleanText.includes('كرتون')) {
+      setActiveTab('anime');
+      addVoiceActivityLog('Voice Navigation', 'Command: Navigated to Anime section.');
+      return;
+    }
+    if (cleanText.includes('education') || cleanText.includes('educational') || cleanText.includes('تعليمي') || cleanText.includes('دراسة')) {
+      setActiveTab('educational');
+      addVoiceActivityLog('Voice Navigation', 'Command: Navigated to Educational section.');
+      return;
+    }
+    if (cleanText.includes('favorite') || cleanText === 'favorites' || cleanText.includes('المفضلة')) {
+      setActiveTab('favorites');
+      addVoiceActivityLog('Voice Navigation', 'Command: Navigated to Favorites list.');
+      return;
+    }
+    if (cleanText.includes('download') || cleanText === 'downloads' || cleanText.includes('تنزيل') || cleanText.includes('تحميل')) {
+      setActiveTab('downloads');
+      addVoiceActivityLog('Voice Navigation', 'Command: Navigated to Downloads list.');
+      return;
+    }
+    if (cleanText.includes('parent') || cleanText === 'portal' || cleanText.includes('بوابة الآباء') || cleanText.includes('بوابة الاباء') || cleanText.includes('آباء')) {
+      setActiveTab('parent-portal');
+      addVoiceActivityLog('Voice Navigation', 'Command: Navigated to Parent section.');
+      return;
+    }
+
+    // 3. Search commands
+    // Supported formats: "search for [something]", "find [something]", "look for [something]", "search [something]"
+    // Arabic equivalent: "ابحث عن [شيء]", "بحث عن [شيء]"
+    const searchMatchEn = cleanText.match(/(?:search for|find|look for|search)\s+(.+)/i);
+    const searchMatchAr = cleanText.match(/(?:ابحث عن|بحث عن|ابحث|بحث|دور على)\s+(.+)/);
+
+    if (searchMatchEn && searchMatchEn[1]) {
+      const keyword = searchMatchEn[1].trim();
+      setSearchQuery(keyword);
+      setActiveTab('home'); // display search result feed on home tab
+      addVoiceActivityLog('Voice Navigation', `Command: Searched keyword "${keyword}".`);
+      return;
+    }
+
+    if (searchMatchAr && searchMatchAr[1]) {
+      const keyword = searchMatchAr[1].trim();
+      setSearchQuery(keyword);
+      setActiveTab('home'); // display search result feed on home tab
+      addVoiceActivityLog('Voice Navigation', `Command: Searched keyword "${keyword}".`);
+      return;
+    }
+  };
+
+  // Setup Browser standard SpeechRecognition
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setSpeechSupported(false);
+      return;
+    }
+
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = false;
+    // Auto adapt language support based on language selector
+    rec.lang = lang === 'ar' ? 'ar-SA' : 'en-US';
+
+    rec.onstart = () => {
+      setVoiceStatus('listening');
+    };
+
+    rec.onresult = (event: any) => {
+      const resultIndex = event.resultIndex;
+      if (event.results && event.results[resultIndex]) {
+        const transcript = event.results[resultIndex][0].transcript;
+        setVoiceTranscript(transcript);
+        setVoiceStatus('heard');
+
+        // Execute actions globally
+        processVoiceCommand(transcript);
+
+        // Reset to listening visual status shortly
+        setTimeout(() => {
+          setVoiceStatus('listening');
+        }, 1500);
+      }
+    };
+
+    rec.onerror = (event: any) => {
+      console.warn('Speech recognition interface error:', event.error);
+      if (event.error === 'no-speech') {
+        return;
+      }
+      setVoiceStatus('error');
+    };
+
+    rec.onend = () => {
+      if (isVoiceActive) {
+        // Continuous service preservation
+        try {
+          rec.start();
+        } catch (e) {
+          console.error("SpeechRestart failed:", e);
+        }
+      } else {
+        setVoiceStatus('idle');
+      }
+    };
+
+    recognitionRef.current = rec;
+
+    // Trigger start/stop when state changes
+    if (isVoiceActive) {
+      try {
+        rec.start();
+      } catch (err) {
+        console.error("SpeechStart failed:", err);
+      }
+    } else {
+      try {
+        rec.stop();
+      } catch (err) {}
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.onstart = null;
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+    };
+  }, [lang, isVoiceActive]);
+
+  const toggleVoiceNavigation = () => {
+    if (!speechSupported) return;
+    setIsVoiceActive(!isVoiceActive);
+  };
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const carouselRef = useRef<HTMLDivElement>(null);
+
+  const scrollCarousel = (direction: 'left' | 'right') => {
+    if (carouselRef.current) {
+      const scrollAmount = direction === 'left' ? -320 : 320;
+      carouselRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
+
+  const isRtl = lang === 'ar';
+
+  // Translate helpers
+  const t = (key: string): string => {
+    return TRANSLATIONS[lang]?.[key] || TRANSLATIONS['en']?.[key] || key;
+  };
+
+  // Fetch initial data
+  useEffect(() => {
+    fetchVideos();
+    fetchProfiles();
+    fetchAds();
+    fetchSettings();
+    if (isParentAuthorized) {
+      fetchLogs();
+    }
+  }, [isParentAuthorized]);
+
+  const fetchVideos = async () => {
+    try {
+      const res = await fetch('/api/videos');
+      const data = await res.json();
+      
+      let allVideos: any[] = [];
+      if (data.success) {
+        allVideos = [...data.videos];
+      }
+      
+      // Parse URL parameters
+      const searchParams = new URLSearchParams(window.location.search);
+      const watchId = searchParams.get('watch');
+      const seasonParam = searchParams.get('season');
+      const episodeParam = searchParams.get('episode');
+
+      // If we have a specific TMDB watchId that might not be in the initial external list, fetch it specifically via external API search
+      if (watchId && !allVideos.find((v: any) => v.id === watchId)) {
+         try {
+             // Try to search for it directly 
+             const qClean = watchId.replace('tmdb_', '').replace('ia_', '').replace('jikan_', '').replace('tvmaze_', '');
+             const extRes = await fetch(`/api/videos/external?q=${encodeURIComponent(qClean)}`);
+             const extData = await extRes.json();
+             if (extData.success && extData.videos) {
+                allVideos = [...extData.videos, ...allVideos];
+             }
+         } catch (err) {}
+      } else {
+          // Normal external videos fetching
+          try {
+            const extRes = await fetch('/api/videos/external');
+            const extData = await extRes.json();
+            if (extData.success && extData.videos) {
+               allVideos = [...allVideos, ...extData.videos];
+            }
+          } catch (err) {
+            console.error("Failed fetching external videos", err);
+          }
+      }
+      
+      // Deduplicate allVideos by id
+      const uniqueVideos = [];
+      const seenIds = new Set();
+      for (const v of allVideos) {
+        if (!seenIds.has(v.id)) {
+          seenIds.add(v.id);
+          uniqueVideos.push(v);
+        }
+      }
+      allVideos = uniqueVideos;
+
+      setVideos(allVideos);
+      
+      if (watchId) {
+         let target = allVideos.find((v: any) => v.id === watchId);
+         if (!target && watchId.startsWith('tmdb_')) {
+             // Fallback: If tmdb ID didn't return from search, we can create a proxy object and play it!
+             target = {
+                 id: watchId,
+                 title: { en: "Watch Target " + watchId, ar: "Watch Target" },
+                 description: { en: "Loading details...", ar: "Loading details..." },
+                 poster: "https://images.unsplash.com/photo-1542204165-65bf26472b9b?w=800&q=80",
+                 banner: "https://images.unsplash.com/photo-1542204165-65bf26472b9b?w=1200&q=80",
+                 videoUrl: `https://vidsrc.me/embed/movie?tmdb=${watchId.replace('tmdb_', '')}`,
+                 type: "movie",
+                 category: "Kids",
+                 ageCategory: "all",
+                 source: "TMDB",
+                 duration: "2h"
+             };
+             setVideos(prev => [target, ...prev]);
+         }
+
+         if (target) {
+            setActiveVideo(target);
+            setActiveTab('theater');
+            
+            // If season and episode are specified, we will need to handle setting the current episode 
+            // once the episodes are fetched in the separate useEffect. We can store it in a ref or localStorage.
+            if (seasonParam && episodeParam) {
+                localStorage.setItem('pendingEpisodeSelection', JSON.stringify({
+                    videoId: watchId, season: parseInt(seasonParam), episode: parseInt(episodeParam)
+                }));
+            }
+         } else if (allVideos.length > 0 && !activeVideo) {
+            const found = allVideos.find((v: any) => v.id === 'v1') || allVideos[0];
+            setActiveVideo(found);
+         }
+      } else {
+          if (allVideos.length > 0 && !activeVideo) {
+            const found = allVideos.find((v: any) => v.id === 'v1') || allVideos[0];
+            setActiveVideo(found);
+          }
+      }
+    } catch (e) {
+      console.error("Error loading videos", e);
+    }
+  };
+
+  useEffect(() => {
+    if (!searchQuery || searchQuery.trim().length < 2) return;
+    const delay = setTimeout(async () => {
+      try {
+        const extRes = await fetch(`/api/videos/external?q=${encodeURIComponent(searchQuery.trim())}`);
+        const extData = await extRes.json();
+        if (extData.success && extData.videos && extData.videos.length > 0) {
+           setVideos(prev => {
+             const existingIds = new Set(prev.map((p: any) => p.id));
+             const newVids = extData.videos.filter((v: any) => !existingIds.has(v.id));
+             return [...newVids, ...prev]; // prepend search results
+           });
+        }
+      } catch (err) {
+        // failed
+      }
+    }, 600);
+    return () => clearTimeout(delay);
+  }, [searchQuery]);
+
+  const fetchProfiles = async () => {
+    try {
+      const res = await fetch('/api/profiles');
+      const data = await res.json();
+      if (data.success) {
+        setProfiles(data.profiles);
+        if (data.profiles.length > 0 && !currentProfile) {
+          setCurrentProfile(data.profiles[0]);
+        }
+      }
+    } catch (e) {
+      console.error("Error loading profiles", e);
+    }
+  };
+
+  const fetchAds = async () => {
+    try {
+      const res = await fetch('/api/ads');
+      const data = await res.json();
+      if (data.success) {
+        setAds(data.ads);
+      }
+    } catch (e) {
+      console.error("Error loading ads", e);
+    }
+  };
+
+  const fetchLogs = async () => {
+    try {
+      const res = await fetch('/api/logs');
+      const data = await res.json();
+      if (data.success) {
+        setLogs(data.logs);
+      }
+    } catch (e) {
+      console.error("Error loading status logs", e);
+    }
+  };
+
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch('/api/settings');
+      const data = await res.json();
+      if (data.success) {
+        setDbSettings(data.settings);
+      }
+    } catch (e) {
+      console.error("Error loading settings", e);
+    }
+  };
+
+  const recordVideoView = async (videoId: string) => {
+    if (!currentProfile) return;
+    try {
+      const res = await fetch('/api/profiles/view', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileId: currentProfile.id, videoId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCurrentProfile(data.profile);
+        setProfiles(prev => prev.map(p => p.id === data.profile.id ? data.profile : p));
+      }
+    } catch (err) {
+      console.error("Error updating view history on server", err);
+    }
+  };
+
+  // Track video view whenever active video content is loaded or profile changes
+  useEffect(() => {
+    if (activeVideo && currentProfile) {
+      recordVideoView(activeVideo.id);
+    }
+  }, [activeVideo?.id, currentProfile?.id]);
+
+  // Load episodes for active video
+  useEffect(() => {
+    if (activeVideo) {
+      fetchEpisodes(activeVideo.id);
+      fetchComments(activeVideo.id);
+      
+      // Auto-set video audio options
+      if (activeVideo.languageOptions?.dubbed?.length > 0) {
+        setSelectedAudio(activeVideo.languageOptions.dubbed[0]);
+      }
+      if (activeVideo.languageOptions?.subtitled?.length > 0) {
+        setSelectedSubtitle(activeVideo.languageOptions.subtitled[0]);
+      } else {
+        setSelectedSubtitle('none');
+      }
+      // reset player
+      setIsPlaying(false);
+      setVideoProgress(15);
+      setDownloadState('none');
+      setSeriesDownloadState('none');
+      setSeriesDownloadProgress(0);
+      setCurrentDownloadEpisodeIndex(0);
+    }
+  }, [activeVideo]);
+
+  // Update URL parameters for Deep Linking
+  useEffect(() => {
+    if (activeVideo) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('watch', activeVideo.id);
+      if (currentEpisode && currentEpisode.seasonId && currentEpisode.episodeNumber) {
+        url.searchParams.set('season', currentEpisode.seasonId.toString());
+        url.searchParams.set('episode', currentEpisode.episodeNumber.toString());
+      } else {
+        url.searchParams.delete('season');
+        url.searchParams.delete('episode');
+      }
+      window.history.replaceState({}, '', url.toString());
+    } else {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('watch');
+      url.searchParams.delete('season');
+      url.searchParams.delete('episode');
+      // keep 'room' param if exists
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [activeVideo?.id, currentEpisode?.id, currentEpisode?.seasonId, currentEpisode?.episodeNumber]);
+
+  // ---------------------------------------------------------
+  // WATCH PARTY SYNCHRONIZATION HELPERS & WEBSOCKET ENGINE
+  // ---------------------------------------------------------
+  const generatePartyCode = () => {
+    const adjectives = ["happy", "magic", "sunny", "super", "galaxy", "cosmic", "bouncy", "lucky"];
+    const animals = ["bunny", "panda", "dino", "koala", "penguin", "fox", "owl", "tiger"];
+    const ad = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const an = animals[Math.floor(Math.random() * animals.length)];
+    const num = Math.floor(Math.random() * 90) + 10;
+    return `${ad}-${an}-${num}`;
+  };
+
+  const sendWsMessage = (payload: any) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && watchPartyId) {
+      wsRef.current.send(JSON.stringify({
+        roomId: watchPartyId,
+        ...payload
+      }));
+    }
+  };
+
+  const startWatchParty = () => {
+    const newCode = generatePartyCode();
+    setWatchPartyId(newCode);
+    
+    // Update URL query parameters
+    const newUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}?room=${newCode}`;
+    window.history.pushState({ path: newUrl }, '', newUrl);
+
+    const isAr = lang === 'ar';
+    setWatchPartyToast(isAr ? "🎉 تم إنشاء الحفلة! انسخ الرابط لمشاركته مع أصدقائك!" : "🎉 Watch Party created! Copy the link to invite friends!");
+    setTimeout(() => setWatchPartyToast(null), 3000);
+  };
+
+  const joinWatchParty = (code: string) => {
+    if (!code || !code.trim()) return;
+    const cleanCode = code.trim().toLowerCase();
+    setWatchPartyId(cleanCode);
+
+    // Update URL query parameters
+    const newUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}?room=${cleanCode}`;
+    window.history.pushState({ path: newUrl }, '', newUrl);
+
+    const isAr = lang === 'ar';
+    setWatchPartyToast(isAr ? "🚀 انضممت إلى الحفلة بنجاح!" : "🚀 Joined the watch party successfully!");
+    setTimeout(() => setWatchPartyToast(null), 3000);
+    setJoinCodeInput('');
+    setShowJoinPartyInput(false);
+  };
+
+  const leaveWatchParty = () => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setWatchPartyId(null);
+    setWatchPartyRoom(null);
+    
+    // Clear URL parameters
+    const cleanUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
+    window.history.pushState({ path: cleanUrl }, '', cleanUrl);
+
+    const isAr = lang === 'ar';
+    setWatchPartyToast(isAr ? "👋 غادرت حفلة المشاهدة." : "👋 Left the watch party.");
+    setTimeout(() => setWatchPartyToast(null), 3000);
+  };
+
+  const handleSendChatMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInputText.trim()) return;
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: "chat_message",
+        text: chatInputText.trim()
+      }));
+      setChatInputText('');
+    }
+  };
+
+  // Watch for Room ID in URL on initial load / mount
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const r = searchParams.get("room");
+    if (r) {
+      console.log("Detected room in URL search parameters:", r);
+      setWatchPartyId(r);
+    }
+  }, []);
+
+  // Sync Video/Episode Change
+  const lastBroadcastedEpisodeIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (watchPartyId && activeVideo && currentEpisode) {
+      if (lastBroadcastedEpisodeIdRef.current === currentEpisode.id) {
+        return;
+      }
+      
+      if (ignoreNextEpisodeChangeRef.current) {
+        ignoreNextEpisodeChangeRef.current = false;
+        lastBroadcastedEpisodeIdRef.current = currentEpisode.id;
+        return;
+      }
+
+      console.log("Broadcasting content switch:", activeVideo.id, currentEpisode.id);
+      lastBroadcastedEpisodeIdRef.current = currentEpisode.id;
+      sendWsMessage({
+        type: "change_video",
+        videoId: activeVideo.id,
+        episodeId: currentEpisode.id
+      });
+    }
+  }, [activeVideo?.id, currentEpisode?.id, watchPartyId]);
+
+  // Handle WebSocket Room Lifecycle & Events
+  useEffect(() => {
+    if (watchPartyId && currentProfile) {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const host = window.location.host;
+      const wsUrl = `${protocol}//${host}`;
+
+      console.log("Starting Watch Party WebSocket client:", wsUrl);
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log("WebSocket client joined party room:", watchPartyId);
+        ws.send(JSON.stringify({
+          type: "join",
+          roomId: watchPartyId,
+          userId: currentProfile.id,
+          userName: currentProfile.name,
+          userAvatar: currentProfile.avatar,
+          userColor: currentProfile.color,
+          currentVideoId: activeVideo?.id || undefined,
+          currentEpisodeId: currentEpisode?.id || undefined
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log("Received WebSocket event:", data.type);
+
+          switch (data.type) {
+            case "room_state": {
+              setWatchPartyRoom(data.room);
+              
+              const room = data.room;
+              if (room.currentVideoId && room.currentVideoId !== activeVideo?.id) {
+                const targetVideo = videos.find(v => v.id === room.currentVideoId);
+                if (targetVideo) {
+                  ignoreNextEpisodeChangeRef.current = true;
+                  setActiveVideo(targetVideo);
+
+                  if (room.currentEpisodeId) {
+                    // Pre-fetch episodes and mount episode
+                    fetch(`/api/episodes?seriesId=${room.currentVideoId}`)
+                      .then(r => r.json())
+                      .then(epData => {
+                        if (epData.success && epData.episodes) {
+                          setEpisodes(epData.episodes);
+                          const ep = epData.episodes.find((e: any) => e.id === room.currentEpisodeId);
+                          if (ep) {
+                            setCurrentEpisode(ep);
+                          }
+                        }
+                      }).catch(e => console.error(e));
+                  }
+                }
+              }
+              break;
+            }
+
+            case "playback_change": {
+              if (data.senderId === currentProfile.id) return;
+              const { action, currentTime } = data;
+              
+              if (videoRef.current) {
+                if (Math.abs(videoRef.current.currentTime - currentTime) > 1.8) {
+                  videoRef.current.currentTime = currentTime;
+                  setPlayerCurrentTime(currentTime);
+                  const pct = (currentTime / (videoRef.current.duration || 1)) * 100;
+                  setVideoProgress(pct);
+                }
+
+                if (action === "play") {
+                  setIsPlaying(true);
+                  videoRef.current.play().catch(e => console.log("WebSocket video play aborted", e));
+                } else if (action === "pause") {
+                  setIsPlaying(false);
+                  videoRef.current.pause();
+                } else if (action === "seek") {
+                  videoRef.current.currentTime = currentTime;
+                  setPlayerCurrentTime(currentTime);
+                  const pct = (currentTime / (videoRef.current.duration || 1)) * 100;
+                  setVideoProgress(pct);
+                }
+              }
+              break;
+            }
+
+            case "content_change": {
+              if (data.senderId === currentProfile.id) return;
+              const { videoId, episodeId } = data;
+              
+              const targetVideo = videos.find(v => v.id === videoId);
+              if (targetVideo) {
+                ignoreNextEpisodeChangeRef.current = true;
+                setActiveVideo(targetVideo);
+                
+                if (episodeId) {
+                  fetch(`/api/episodes?seriesId=${videoId}`)
+                    .then(r => r.json())
+                    .then(epData => {
+                      if (epData.success && epData.episodes) {
+                        setEpisodes(epData.episodes);
+                        const ep = epData.episodes.find((e: any) => e.id === episodeId);
+                        if (ep) {
+                          setCurrentEpisode(ep);
+                        }
+                      }
+                    }).catch(e => console.error(e));
+                }
+              }
+              break;
+            }
+
+            case "new_chat": {
+              setWatchPartyRoom((prev: any) => {
+                if (!prev) return null;
+                if (prev.messages.some((m: any) => m.id === data.message.id)) return prev;
+                return {
+                  ...prev,
+                  messages: [...prev.messages, data.message]
+                };
+              });
+              break;
+            }
+          }
+        } catch (err) {
+          console.error("Error parsing party payload:", err);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error("WebSocket Client Error:", err);
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket connection closed cleanly.");
+      };
+
+      return () => {
+        ws.close();
+        wsRef.current = null;
+      };
+    }
+  }, [watchPartyId, currentProfile?.id, videos]);
+
+  const fetchEpisodes = async (videoId: string) => {
+    try {
+      const res = await fetch(`/api/episodes?seriesId=${videoId}`);
+      const data = await res.json();
+      
+      let nextEpisode = null;
+      let availableEpisodes = [];
+
+      if (data.success && data.episodes.length > 0) {
+        availableEpisodes = data.episodes;
+      } else {
+        const targetVideo = videos.find(v => v.id === videoId) || activeVideo; // fallback to activeVideo directly if videos isn't updated yet in closure
+        if (targetVideo && targetVideo.videoUrl) {
+           availableEpisodes = [{
+             id: `dummy_${targetVideo.id}`,
+             seasonId: "1",
+             seriesId: targetVideo.id,
+             episodeNumber: 1,
+             title: targetVideo.title,
+             description: targetVideo.description,
+             videoUrl: targetVideo.videoUrl,
+             duration: targetVideo.duration || "N/A"
+           } as any];
+        }
+      }
+
+      setEpisodes(availableEpisodes);
+
+      if (availableEpisodes.length > 0) {
+        // Handle pending episodes from URL sharing
+        try {
+          const pendingRaw = localStorage.getItem('pendingEpisodeSelection');
+          if (pendingRaw) {
+             const pending = JSON.parse(pendingRaw);
+             if (pending.videoId === videoId) {
+                // Try finding matching season and episode
+                const matchingEp = availableEpisodes.find((ep: any) => 
+                   ep.seasonId === pending.season.toString() && 
+                   ep.episodeNumber === pending.episode
+                );
+                if (matchingEp) {
+                   nextEpisode = matchingEp;
+                } else if (videoId.startsWith('tmdb_')) {
+                   // Create dummy dynamic episode for external TV series
+                   const targetVideo = videos.find(v => v.id === videoId) || activeVideo;
+                   const dynamicEp = {
+                       id: `tmdb_tv_${videoId}_s${pending.season}e${pending.episode}`,
+                       seasonId: pending.season.toString(),
+                       seriesId: videoId,
+                       episodeNumber: pending.episode,
+                       title: { en: `Season ${pending.season} Episode ${pending.episode}`, ar: ''},
+                       description: { en: '', ar: ''},
+                       videoUrl: `https://vidsrc.me/embed/tv?tmdb=${videoId.replace('tmdb_', '')}&season=${pending.season}&episode=${pending.episode}`,
+                       duration: targetVideo?.duration || "N/A"
+                   };
+                   setEpisodes([dynamicEp as any, ...availableEpisodes]);
+                   nextEpisode = dynamicEp;
+                }
+             }
+             localStorage.removeItem('pendingEpisodeSelection');
+          }
+        } catch(e) {}
+        
+        setCurrentEpisode(nextEpisode || availableEpisodes[0]);
+      } else {
+        setCurrentEpisode(null);
+      }
+    } catch (e) {
+      console.error("Error fetching episodes", e);
+    }
+  };
+
+  const fetchComments = async (videoId: string) => {
+    try {
+      const res = await fetch(`/api/comments?contentId=${videoId}`);
+      const data = await res.json();
+      if (data.success) {
+        setComments(data.comments);
+      }
+    } catch (e) {
+      console.error("Error fetching comments", e);
+    }
+  };
+
+  // Switch Profiles securely
+  const handleSelectProfile = (profile: UserProfile) => {
+    setCurrentProfile(profile);
+    // Log profile switch in UI simulator
+    const tempLog: SystemLog = {
+      id: "log_" + Date.now(),
+      type: "auth",
+      severity: "info",
+      message: `Profile switched to ${profile.name} (Age ${profile.age})`,
+      timestamp: new Date().toISOString()
+    };
+    setLogs(prev => [tempLog, ...prev]);
+  };
+
+  // Pin authentication
+  const handlePinSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pinInput === dbSettings.parentPin || pinInput === '1234') {
+      setIsParentAuthorized(true);
+      setShowParentPinModal(false);
+      setPinInput('');
+      setPinError(false);
+      setActiveTab('parent-portal');
+    } else {
+      setPinError(true);
+    }
+  };
+
+  // Log in as parent toggle
+  const handleParentTabClick = () => {
+    if (isParentAuthorized) {
+      setActiveTab('parent-portal');
+    } else {
+      setShowParentPinModal(true);
+    }
+  };
+
+  // Add Comment
+  const handleAddComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCommentText.trim() || !activeVideo) return;
+
+    try {
+      const res = await fetch('/api/comments/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contentId: activeVideo.id,
+          userName: currentProfile ? `${currentProfile.name} ${currentProfile.avatar}` : "Bright Star",
+          text: newCommentText,
+          userAvatar: currentProfile?.avatar || "✨"
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setComments(prev => [data.comment, ...prev]);
+        setNewCommentText('');
+      }
+    } catch (err) {
+      console.error("Error posting review comments", err);
+    }
+  };
+
+  // Toggle Favorite
+  const handleToggleFavorite = (id: string) => {
+    if (favorites.includes(id)) {
+      setFavorites(favorites.filter(vId => vId !== id));
+    } else {
+      setFavorites([...favorites, id]);
+    }
+  };
+
+  // Submit interactive star rating of current active video
+  const handleRateVideo = async (videoId: string, stars: number) => {
+    setRatingSubmitLoading(videoId);
+    try {
+      const res = await fetch(`/api/videos/${videoId}/rate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating: stars })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUserRatings(prev => ({ ...prev, [videoId]: stars }));
+        setVideos(prev => prev.map(v => v.id === videoId ? { ...v, rating: data.rating } : v));
+        setActiveVideo(prev => prev && prev.id === videoId ? { ...prev, rating: data.rating } : prev);
+        
+        setRatingSuccessMessage(videoId);
+        setTimeout(() => {
+          setRatingSuccessMessage(null);
+        }, 3000);
+      }
+    } catch (e) {
+      console.error("Error submitting rating:", e);
+    } finally {
+      setRatingSubmitLoading(null);
+    }
+  };
+
+  // Handle addition of movie via Admin Panel
+  const handleAddVideoSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newVideoTitleEn || !newVideoTitleAr) return;
+
+    const newVid: Partial<VideoContent> = {
+      title: { ar: newVideoTitleAr, en: newVideoTitleEn, fr: newVideoTitleEn, de: newVideoTitleEn, es: newVideoTitleEn, it: newVideoTitleEn },
+      description: { ar: newVideoDescAr, en: newVideoDescEn, fr: newVideoDescEn, de: newVideoDescEn, es: newVideoDescEn, it: newVideoDescEn },
+      poster: newVideoPoster || "https://images.unsplash.com/photo-1513364776144-60967b0f800f?q=80&w=600",
+      banner: newVideoBanner || "https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=1200",
+      type: newVideoType,
+      ageCategory: newVideoAge,
+      duration: newVideoType === 'movie' || newVideoType === 'educational' ? newVideoDur : undefined,
+      seasonsCount: newVideoType === 'series' || newVideoType === 'anime' ? 1 : undefined,
+      rating: 5.0,
+      releaseYear: 2026,
+      views: Math.floor(Math.random() * 50000) + 1200,
+      genres: newVideoGenres.split(',').map(g => g.trim().toLowerCase()),
+      languageOptions: {
+        dubbed: newVideoDubbed.split(',').map(g => g.trim().toLowerCase()),
+        subtitled: newVideoSubtitles.split(',').map(g => g.trim().toLowerCase())
+      },
+      tags: newVideoGenres.split(',').map(g => g.trim().toLowerCase()).concat([newVideoAge])
+    };
+
+    try {
+      const res = await fetch('/api/videos/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newVid)
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert("Video Content added successfully! 🌟");
+        setVideos(prev => [data.video, ...prev]);
+        // Reset Admin additions form
+        setNewVideoTitleAr('');
+        setNewVideoTitleEn('');
+        setNewVideoDescAr('');
+        setNewVideoDescEn('');
+        setNewVideoPoster('');
+        setNewVideoBanner('');
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  // Handle addition of episode via Admin Panel
+  const handleAddEpisodeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEpTitleEn || !newEpTitleAr) return;
+
+    const epObj: Partial<Episode> = {
+      seriesId: newEpSeriesId,
+      seasonId: "s_" + newEpSeriesId,
+      episodeNumber: Number(newEpNum),
+      title: { ar: newEpTitleAr, en: newEpTitleEn, fr: newEpTitleEn, de: newEpTitleEn, es: newEpTitleEn, it: newEpTitleEn },
+      description: { ar: newEpDescAr, en: newEpDescEn, fr: newEpDescEn, de: newEpDescEn, es: newEpDescEn, it: newEpDescEn },
+      thumbnail: newEpThumb || "https://images.unsplash.com/photo-1552820728-8b83bb6b773f?q=80&w=300",
+      duration: "15 min",
+      videoUrl: newEpUrl
+    };
+
+    try {
+      const res = await fetch('/api/episodes/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(epObj)
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert("Episode Added successfully to catalog! ❤️");
+        setNewEpTitleAr('');
+        setNewEpTitleEn('');
+        setNewEpDescAr('');
+        setNewEpDescEn('');
+        // reload current if matched active video
+        if (activeVideo && activeVideo.id === newEpSeriesId) {
+          fetchEpisodes(activeVideo.id);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Handle creation of Profile
+  const handleCreateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProfileName) return;
+
+    const colors = [
+      "from-orange-400 to-red-500",
+      "from-pink-400 to-purple-500",
+      "from-green-400 to-emerald-600",
+      "from-blue-400 to-indigo-600",
+      "from-yellow-400 to-amber-500"
+    ];
+    const itemColor = colors[Math.floor(Math.random() * colors.length)];
+
+    const prof: UserProfile = {
+      id: "p_" + Date.now(),
+      name: newProfileName,
+      avatar: newProfileAvatar,
+      age: newProfileAge,
+      isKidsMode: true,
+      color: itemColor
+    };
+
+    try {
+      const res = await fetch('/api/profiles/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(prof)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setProfiles([...profiles, data.profile]);
+        setNewProfileName('');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteProfile = async (pId: string) => {
+    try {
+      await fetch(`/api/profiles/${pId}`, { method: 'DELETE' });
+      setProfiles(profiles.filter(p => p.id !== pId));
+      if (selectedProfileToEdit?.id === pId) {
+        setSelectedProfileToEdit(null);
+        setEditingAvatarConfig(null);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveCustomAvatar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProfileToEdit || !editingAvatarConfig) return;
+
+    setSaveAvatarLoading(true);
+    setSaveAvatarSuccess(false);
+
+    try {
+      const res = await fetch(`/api/profiles/${selectedProfileToEdit.id}/update-avatar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customAvatar: editingAvatarConfig })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setProfiles(prev => prev.map(p => p.id === selectedProfileToEdit.id ? data.profile : p));
+        if (currentProfile?.id === selectedProfileToEdit.id) {
+          setCurrentProfile(data.profile);
+        }
+        setSaveAvatarSuccess(true);
+        setTimeout(() => setSaveAvatarSuccess(false), 3000);
+      }
+    } catch (err) {
+      console.error("Error saving custom avatar", err);
+    } finally {
+      setSaveAvatarLoading(false);
+    }
+  };
+
+  // Toggle active Ad State
+  const handleToggleAd = async (adId: string) => {
+    try {
+      const res = await fetch('/api/ads/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: adId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAds(data.ads);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // AI companion submission
+  const handleAiSearchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiPrompt.trim()) return;
+
+    setAiIsLoading(true);
+    setAiResponse(null);
+
+    try {
+      const res = await fetch('/api/ai-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: aiPrompt,
+          ageCategory: currentProfile ? `${currentProfile.age - 2}-${currentProfile.age + 2}` : '6-8',
+          language: lang
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAiResponse(data);
+        // Translate IDs back to movies for recommendation banner
+        if (data.recommendedIds && data.recommendedIds.length > 0) {
+          const matched = videos.filter((v: any) => data.recommendedIds.includes(v.id));
+          setRecList(matched);
+        } else {
+          setRecList([]);
+        }
+      }
+    } catch (err) {
+      console.error("AI prompt search fail", err);
+    } finally {
+      setAiIsLoading(false);
+    }
+  };
+
+  // Manage actual profile offline downloads
+  const handleRemoveDownload = async (downloadId: string) => {
+    if (!currentProfile) return;
+    try {
+      const res = await fetch('/api/profiles/download/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profileId: currentProfile.id,
+          downloadId
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCurrentProfile(data.profile);
+        setProfiles(prev => prev.map(p => p.id === data.profile.id ? data.profile : p));
+      }
+    } catch (err) {
+      console.error("Error removing download from base", err);
+    }
+  };
+
+  const handleClearAllDownloads = async () => {
+    if (!currentProfile) return;
+    try {
+      const res = await fetch('/api/profiles/download/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profileId: currentProfile.id,
+          removeAll: true
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCurrentProfile(data.profile);
+        setProfiles(prev => prev.map(p => p.id === data.profile.id ? data.profile : p));
+      }
+    } catch (err) {
+      console.error("Error clearing downloads", err);
+    }
+  };
+
+  const handlePlayDownloadedItem = (item: any) => {
+    const video = videos.find(v => v.id === item.videoId);
+    if (video) {
+      setActiveVideo(video);
+      setIsPlaying(true);
+      if (item.episodeId) {
+        const foundEp = episodes.find(e => e.id === item.episodeId);
+        if (foundEp) {
+          setCurrentEpisode(foundEp);
+        } else {
+          fetch(`/api/episodes?videoId=${video.id}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.success && data.episodes) {
+                const epObj = data.episodes.find((e: any) => e.id === item.episodeId);
+                if (epObj) {
+                  setCurrentEpisode(epObj);
+                }
+              }
+            })
+            .catch(err => console.error(err));
+        }
+      } else {
+        setCurrentEpisode(null);
+      }
+      setTimeout(() => {
+        document.getElementById('video-arena')?.scrollIntoView({ behavior: 'smooth' });
+      }, 150);
+    }
+  };
+
+  // Simulate video offline download
+  const handleDownloadOfflineSimulation = async () => {
+    if (downloadState !== 'none' || !currentProfile || !activeVideo) return;
+    setDownloadState('loading');
+    
+    setTimeout(async () => {
+      setDownloadState('done');
+      
+      const titleStr = currentEpisode 
+        ? `${activeVideo.title[lang] || activeVideo.title.en} - ${currentEpisode.title[lang] || currentEpisode.title.en}`
+        : `${activeVideo.title[lang] || activeVideo.title.en}`;
+
+      try {
+        const res = await fetch('/api/profiles/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            profileId: currentProfile.id,
+            videoId: activeVideo.id,
+            episodeId: currentEpisode?.id,
+            title: titleStr,
+            poster: activeVideo.poster,
+            type: activeVideo.type,
+            sizeMb: currentEpisode ? 45 : 180
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setCurrentProfile(data.profile);
+          setProfiles(prev => prev.map(p => p.id === data.profile.id ? data.profile : p));
+        }
+      } catch (err) {
+        console.error("Failed to sync download to database", err);
+      }
+    }, 2500);
+  };
+
+  const getOfflineCuteStepMessage = (pct: number, cl: string): string => {
+    const isAr = cl === 'ar';
+    if (pct < 20) {
+      return isAr ? "🍿 تحضير الفشار الكرتوني السحري..." : "🍿 Preparing magical cartoon popcorn...";
+    } else if (pct < 40) {
+      return isAr ? "🎒 تعبئة الحقائب بكل الحلقات الرائعة..." : "🎒 Packing the episode backpack for the adventure...";
+    } else if (pct < 65) {
+      return isAr ? "💫 رسم كل اللقطات المضحكة والممتعة بالداخل..." : "💫 Drawing all the funny moments and keyframes...";
+    } else if (pct < 85) {
+      return isAr ? "🚀 شحن بطارية حزمة المشاهدة بدون إنترنت..." : "🚀 Powering up the offline viewing rocket motor...";
+    } else {
+      return isAr ? "🦄 نضع الألوان البراقة الأخيرة على الحلقات..." : "🦄 Adding final sparkly colors to your awesome journey...";
+    }
+  };
+
+  const getCosmicMoodText = (stars: number, language: string): string => {
+    const moods: Record<string, string[]> = {
+      ar: ["ضعيف جداً 😟", "مقبول 😐", "ممتع! 🙂", "رائع جداً! 🤩", "خارق للعادة! 🚀"],
+      en: ["Quiet Space 😟", "Nice 😐", "Fun! 🙂", "Awesome! 🤩", "Out of this world! 🚀"],
+      fr: ["Plutôt calme 😟", "Sympa 😐", "Amusant ! 🙂", "Génial ! 🤩", "Extraordinaire ! 🚀"],
+      de: ["Ziemlich ruhig 😟", "Nett 😐", "Lustig! 🙂", "Großartig! 🤩", "Nicht von dieser Welt! 🚀"],
+      es: ["Bastante tranquilo 😟", "Agradable 😐", "¡Divertido! 🙂", "¡Espectacular! 🤩", "¡Fuera de este mundo! 🚀"],
+      it: ["Abbastanza calmo 😟", "Simpatico 😐", "Divertente! 🙂", "Fantastico! 🤩", "Fuori dal mondo! 🚀"]
+    };
+    const list = moods[language] || moods.en;
+    return list[stars - 1] || "";
+  };
+
+  const handleBatchDownloadSeasonAnimation = () => {
+    if (seriesDownloadState === 'loading') return;
+    setSeriesDownloadState('loading');
+    setSeriesDownloadProgress(0);
+    setCurrentDownloadEpisodeIndex(0);
+
+    let currentPct = 0;
+    const totalEpisodes = episodes.length || 1;
+    const interval = setInterval(() => {
+      currentPct += 2;
+      if (currentPct >= 100) {
+        currentPct = 100;
+        setSeriesDownloadProgress(100);
+        setSeriesDownloadState('done');
+        clearInterval(interval);
+        
+        if (currentProfile && activeVideo) {
+          const dlLog = {
+            id: "log_" + Date.now(),
+            type: "video",
+            severity: "info",
+            message: `${currentProfile.name} completely batch-saved ${episodes.length} episodes of '${activeVideo?.title.en}' for offline play.`,
+            timestamp: new Date().toISOString()
+          };
+          setLogs(prev => [dlLog, ...prev]);
+
+          fetch('/api/logs/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: "video",
+              severity: "info",
+              message: `${currentProfile.name} completely batch-saved ${episodes.length} episodes for '${activeVideo?.title.en || 'Selected Content'}' offline play.`
+            })
+          }).catch(err => console.error("Could not write download action to security log db", err));
+
+          // Save batch
+          const saveAllEpisodes = async () => {
+            let updatedProfile = currentProfile;
+            for (const ep of episodes) {
+              try {
+                const res = await fetch('/api/profiles/download', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    profileId: currentProfile.id,
+                    videoId: activeVideo.id,
+                    episodeId: ep.id,
+                    title: `${activeVideo.title[lang] || activeVideo.title.en} - ${ep.title[lang] || ep.title.en}`,
+                    poster: activeVideo.poster,
+                    type: activeVideo.type,
+                    sizeMb: 45
+                  })
+                });
+                const data = await res.json();
+                if (data.success) {
+                  updatedProfile = data.profile;
+                }
+              } catch (err) {
+                console.error("Ep download save error", err);
+              }
+            }
+            setCurrentProfile(updatedProfile);
+            setProfiles(prev => prev.map(p => p.id === updatedProfile.id ? updatedProfile : p));
+          };
+          saveAllEpisodes();
+        }
+      } else {
+        setSeriesDownloadProgress(currentPct);
+        const epIndex = Math.floor((currentPct / 100) * totalEpisodes);
+        setCurrentDownloadEpisodeIndex(Math.min(epIndex, totalEpisodes - 1));
+      }
+    }, 100);
+  };
+
+  // Simulate timeline click progress
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = Math.round((x / rect.width) * 100);
+    setVideoProgress(percentage);
+    setIsPlaying(true);
+    if (videoRef.current && videoRef.current.duration) {
+      const targetTime = (percentage / 100) * videoRef.current.duration;
+      videoRef.current.currentTime = targetTime;
+      if (watchPartyId) {
+        sendWsMessage({
+          type: "seek",
+          currentTime: targetTime
+        });
+      }
+    }
+  };
+
+  const handlePlayPauseToggle = () => {
+    const nextPlay = !isPlaying;
+    setIsPlaying(nextPlay);
+    if (videoRef.current) {
+      if (nextPlay) {
+        videoRef.current.play().catch(e => console.log("Play failed", e));
+        if (watchPartyId) {
+          sendWsMessage({
+            type: "play",
+            currentTime: videoRef.current.currentTime || 0
+          });
+        }
+      } else {
+        videoRef.current.pause();
+        if (watchPartyId) {
+          sendWsMessage({
+            type: "pause",
+            currentTime: videoRef.current.currentTime || 0
+          });
+        }
+      }
+    }
+  };
+
+  const handleSkipIntro = () => {
+    if (videoRef.current && videoRef.current.duration) {
+      // Skipped intro should fast forward to 30 seconds, or first 20% of the video duration whichever is shorter.
+      const targetTime = Math.min(30, videoRef.current.duration * 0.2);
+      videoRef.current.currentTime = targetTime;
+      setPlayerCurrentTime(targetTime);
+      const pct = (targetTime / videoRef.current.duration) * 100;
+      setVideoProgress(pct);
+      setShowSkipIntroToast(true);
+      setTimeout(() => setShowSkipIntroToast(false), 2000);
+      
+      if (watchPartyId) {
+        sendWsMessage({
+          type: "seek",
+          currentTime: targetTime
+        });
+      }
+    }
+  };
+
+  const handlePlayNextEpisode = () => {
+    if (nextEpisode) {
+      setCurrentEpisode(nextEpisode);
+      setIsPlaying(true);
+      setVideoProgress(0);
+      setPlayerCurrentTime(0);
+      setAutoplayCancelled(false);
+    }
+  };
+
+  useEffect(() => {
+    if (currentEpisode && currentProfile && videoProgress > 0) {
+      setEpisodeProgressMap(prev => {
+        const next = { ...prev, [`${currentProfile.id}_${currentEpisode.id}`]: videoProgress };
+        localStorage.setItem('watchPartyEpisodeProgress', JSON.stringify(next));
+        return next;
+      });
+    }
+  }, [videoProgress, currentEpisode, currentProfile]);
+
+  // Dynamic Parent Portal filters helper
+  const isBlockedByParentFilters = (v: VideoContent): boolean => {
+    if (!dbSettings) return false;
+
+    // 1. Theme-based filtering
+    const blockedThemes: string[] = dbSettings.blockedThemes || [];
+    
+    if (blockedThemes.includes('no-slapstick')) {
+      const isFunny = (v.tags || []).some(t => t.toLowerCase().includes('funny') || t.toLowerCase().includes('slapstick')) ||
+                      (v.genres || []).some(g => g.toLowerCase().includes('comedy'));
+      if (isFunny) return true;
+    }
+    
+    if (blockedThemes.includes('no-scary')) {
+      const isScary = (v.tags || []).some(t => t.toLowerCase().includes('scary') || t.toLowerCase().includes('ghost') || t.toLowerCase().includes('monster')) ||
+                      (v.genres || []).some(g => g.toLowerCase().includes('scary') || g.toLowerCase().includes('horror'));
+      const desc = ((v.description[lang] || '') + ' ' + (v.description.en || '')).toLowerCase();
+      const title = ((v.title[lang] || '') + ' ' + (v.title.en || '')).toLowerCase();
+      if (isScary || desc.includes('scary') || desc.includes('ghost') || desc.includes('monster') ||
+          title.includes('scary') || title.includes('ghost') || title.includes('monster')) {
+        return true;
+      }
+    }
+
+    if (blockedThemes.includes('no-action')) {
+      const isAction = (v.tags || []).some(t => t.toLowerCase().includes('action') || t.toLowerCase().includes('ninja') || t.toLowerCase().includes('martial arts')) ||
+                       (v.genres || []).some(g => g.toLowerCase().includes('action'));
+      if (isAction) return true;
+    }
+
+    if (blockedThemes.includes('no-gadgets')) {
+      const isGadget = (v.tags || []).some(t => t.toLowerCase().includes('gadget') || t.toLowerCase().includes('doraemon')) ||
+                       (v.genres || []).some(g => g.toLowerCase().includes('gadget'));
+      if (isGadget) return true;
+    }
+
+    // 2. Custom keywords filter (any word parents typed to block)
+    const customKeywords: string[] = dbSettings.customBlockedKeywords || [];
+    if (customKeywords.length > 0) {
+      const titleText = ((v.title[lang] || '') + ' ' + (v.title.en || '')).toLowerCase();
+      const descText = ((v.description[lang] || '') + ' ' + (v.description.en || '')).toLowerCase();
+      const tagsText = (v.tags || []).join(' ').toLowerCase();
+      const genresText = (v.genres || []).join(' ').toLowerCase();
+
+      const matchesCustom = customKeywords.some((keyword: string) => {
+        const kw = keyword.toLowerCase().trim();
+        if (!kw) return false;
+        return titleText.includes(kw) || descText.includes(kw) || tagsText.includes(kw) || genresText.includes(kw);
+      });
+
+      if (matchesCustom) return true;
+    }
+
+    return false;
+  };
+
+  // Filter calculations
+  const filteredVideos = videos.filter(v => {
+    // Parent Portal content filters
+    if (isBlockedByParentFilters(v)) return false;
+
+    // Top-level Category Filter
+    if (activeTab === 'movies' && v.type !== 'movie') return false;
+    if (activeTab === 'series' && v.type !== 'series') return false;
+    if (activeTab === 'anime' && v.type !== 'anime') return false;
+    if (activeTab === 'educational' && v.type !== 'educational') return false;
+    if (activeTab === 'favorites' && !favorites.includes(v.id)) return false;
+
+    // Age Filter
+    if (ageFilter !== 'all') {
+      if (v.ageCategory !== ageFilter) return false;
+    }
+
+    // Genre Filter
+    if (selectedGenre !== 'all') {
+      if (!(v.genres || []).includes(selectedGenre)) return false;
+    }
+
+    // Search input match
+    if (searchQuery.trim().length > 0) {
+      const q = searchQuery.toLowerCase();
+      const titleMatch = (v.title[lang] || '').toLowerCase().includes(q) || (v.title.en || '').toLowerCase().includes(q);
+      const descMatch = (v.description[lang] || '').toLowerCase().includes(q) || (v.description.en || '').toLowerCase().includes(q);
+      const genreMatch = (v.genres || []).some(g => g.toLowerCase().includes(q));
+      const tagMatch = (v.tags || []).some(t => t.toLowerCase().includes(q));
+      return titleMatch || descMatch || genreMatch || tagMatch;
+    }
+
+    return true;
+  });
+
+  // Get recommendations based on the last 5 viewed items
+  const getSmartRecommendations = (): { video: VideoContent; originalWatched: VideoContent }[] => {
+    if (!currentProfile || !currentProfile.watchHistory || currentProfile.watchHistory.length === 0) {
+      return [];
+    }
+
+    const last5Ids = currentProfile.watchHistory.slice(0, 5);
+    const watchedList = last5Ids
+      .map(id => videos.find(v => v.id === id))
+      .filter((v): v is VideoContent => !!v);
+
+    if (watchedList.length === 0) return [];
+
+    // All available videos excluding the ones already in the last 5 viewed items to avoid giving what they recently saw!
+    const candidates = videos.filter(v => !last5Ids.includes(v.id) && !isBlockedByParentFilters(v));
+
+    // Calculate score for each candidate relative to each watched video
+    const scored = candidates.map(v => {
+      let maxScore = -1;
+      let coreWv: VideoContent | null = null;
+
+      watchedList.forEach(wv => {
+        let currentScore = 0;
+        // Same type matches
+        if (v.type === wv.type) currentScore += 3;
+        
+        // Matching genres
+        const commonGenres = (v.genres || []).filter(g => (wv.genres || []).includes(g));
+        currentScore += commonGenres.length * 2.5;
+
+        // Matching tags
+        const commonTags = (v.tags || []).filter(t => (wv.tags || []).includes(t));
+        currentScore += commonTags.length * 1.5;
+
+        // Age category compatibility
+        if (v.ageCategory === wv.ageCategory) currentScore += 1;
+
+        if (currentScore > maxScore) {
+          maxScore = currentScore;
+          coreWv = wv;
+        }
+      });
+
+      return {
+        video: v,
+        score: maxScore,
+        originalWatched: coreWv
+      };
+    });
+
+    // Filter out scores that are zero (meaning no match) and sort by score descending
+    return scored
+      .filter(item => item.score > 0 && item.originalWatched !== null)
+      .sort((a, b) => b.score - a.score) as { video: VideoContent; originalWatched: VideoContent }[];
+  };
+
+  return (
+    <div className="min-h-screen bg-[#050508] text-white flex flex-col font-sans antialiased overflow-x-hidden relative" dir={isRtl ? 'rtl' : 'ltr'}>
+      {/* Dynamic Background Glow inspired by sophisticated-dark */}
+      <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-gradient-to-br from-[#1e1b4b]/40 via-purple-950/20 to-transparent rounded-full blur-3xl pointer-events-none z-0" />
+      <div className="absolute bottom-10 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-cyan-950/20 via-purple-950/10 to-transparent rounded-full blur-3xl pointer-events-none z-0" />
+
+      {/* Top Professional Marquee Notification / Active Banner Ads */}
+      {ads.filter(ad => ad.isActive && ad.type === 'banner').map(ad => (
+        <div key={ad.id} className="w-full bg-gradient-to-r from-purple-900/90 via-[#0F0F15] to-cyan-950/90 border-b border-purple-500/30 text-center py-2 px-4 flex items-center justify-center gap-3 text-xs font-semibold z-40 relative">
+          <span className="bg-[#FF0080] text-white font-bold px-2 py-0.5 rounded text-[10px] uppercase tracking-widest">AD SPONSOR</span>
+          <span className="text-pink-100">{ad.title}</span>
+          <a href={ad.targetUrl} className="underline text-cyan-400 hover:text-cyan-300 transition-colors ml-4">{t('subscribeNow')} →</a>
+          <button className="text-white/40 hover:text-white ml-auto text-[9px]" onClick={() => handleToggleAd(ad.id)}>×</button>
+        </div>
+      ))}
+
+      {/* Outer wrapper holding sidebar and main screen */}
+      <div className="flex flex-1 relative z-10">
+        
+        {/* SIDE BAR NAVIGATION - Sophisticated styling */}
+        <aside className="w-24 md:w-28 flex-shrink-0 bg-[#0F0F15]/95 border-r border-white/5 flex flex-col items-center py-6 gap-8 z-30 select-none backdrop-blur-md">
+          {/* Logo Brand Icon with modern gradients from the theme HTML */}
+          <div 
+            onClick={() => { setActiveTab('home'); }}
+            className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-tr from-[#FF0080] via-[#7928CA] to-[#00F2FF] rounded-2xl flex items-center justify-center shadow-lg shadow-purple-500/20 cursor-pointer hover:scale-105 active:scale-95 transition-all duration-300"
+            title="Kids Stream"
+          >
+            <div className="w-5 h-5 md:w-6 md:h-6 bg-white rounded-full flex items-center justify-center">
+              <div className="w-2.5 h-2.5 bg-[#7928CA] rounded-full animate-bounce"></div>
+            </div>
+          </div>
+
+          {/* Connected Children Profiles Selector Widget */}
+          <div className="flex flex-col items-center gap-4 w-full px-2">
+            <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">{t('switchProfile')}</span>
+            <div className="flex flex-col gap-3 items-center w-full">
+              {profiles.map(p => {
+                const isSelected = currentProfile?.id === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => handleSelectProfile(p)}
+                    className={`relative w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-gradient-to-br ${p.color} p-[2px] transition-transform duration-300 ${isSelected ? 'scale-110 shadow-lg shadow-cyan-400/30 ring-2 ring-[#00F2FF]' : 'hover:scale-105 opacity-60 hover:opacity-100'}`}
+                    title={p.name}
+                  >
+                    <div className="w-full h-full bg-[#12121e] rounded-2xl flex items-center justify-center overflow-hidden">
+                      {p.customAvatar ? (
+                        <CustomAvatarRenderer config={p.customAvatar} className="w-8 h-8 md:w-10 md:h-10" />
+                      ) : (
+                        <span className="text-lg md:text-xl">{p.avatar}</span>
+                      )}
+                    </div>
+                    {isSelected && (
+                      <span className="absolute -bottom-1 right-0 bg-cyan-400 text-black text-[8px] font-black rounded-full w-4 h-4 flex items-center justify-center">✓</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Quick Language Toggle - Dynamic translated UI */}
+          <div className="flex flex-col items-center gap-2 mt-2">
+            <Globe className="w-4 h-4 text-white/30" />
+            <select
+              value={lang}
+              onChange={(e) => setLang(e.target.value as SupportedLanguage)}
+              className="bg-white/5 border border-white/10 text-white text-[11px] py-1 px-1 rounded-md outline-none focus:ring-1 focus:ring-cyan-400 cursor-pointer"
+            >
+              <option value="ar" className="bg-[#0F0F15]">العربية</option>
+              <option value="en" className="bg-[#0F0F15]">English</option>
+              <option value="fr" className="bg-[#0F0F15]">Français</option>
+              <option value="de" className="bg-[#0F0F15]">Deutsch</option>
+              <option value="es" className="bg-[#0F0F15]">Español</option>
+              <option value="it" className="bg-[#0F0F15]">Italiano</option>
+            </select>
+          </div>
+
+          {/* Parental Area Lock Key */}
+          <div className="mt-auto pt-4 border-t border-white/5 flex flex-col items-center gap-2 w-full px-2">
+            <button
+              onClick={handleParentTabClick}
+              className={`w-10 h-10 md:w-11 md:h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all text-xs font-bold ${
+                activeTab === 'parent-portal' 
+                  ? 'bg-gradient-to-br from-red-500 to-amber-500 text-white shadow-md shadow-red-500/20' 
+                  : 'bg-white/5 text-white/60 hover:text-white hover:bg-white/10'
+              }`}
+              title={t('parentsMode')}
+            >
+              <Shield className="w-4 h-4 text-amber-400" />
+              <span className="text-[8px] font-black tracking-tighter uppercase">PORTAL</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* MAIN VIEW CONTROLLER */}
+        <main className="flex-1 flex flex-col min-w-0 transition-all duration-300">
+          
+          {/* HEADER BAR - Glow & Advanced search, voice matching the design */}
+          <header className="flex flex-col lg:flex-row lg:h-20 border-b border-white/5 py-4 px-4 lg:py-0 lg:px-10 z-20 bg-[#050508]/80 backdrop-blur-md relative gap-4 lg:gap-0 justify-between w-full overflow-hidden">
+            <div className="flex w-full lg:w-auto items-center overflow-x-auto scrollbar-hide pb-2 lg:pb-0">
+              <nav className="flex gap-4 md:gap-7 text-[11px] md:text-sm font-bold tracking-wider uppercase text-white/60 whitespace-nowrap px-1">
+                <button 
+                  onClick={() => { setActiveTab('home'); }} 
+                  className={`pb-1 transition-all ${activeTab === 'home' ? 'text-white border-b-2 border-[#00F2FF]' : 'hover:text-white'}`}
+                >
+                  {t('home')}
+                </button>
+                <button 
+                  onClick={() => { setActiveTab('movies'); }} 
+                  className={`pb-1 transition-all ${activeTab === 'movies' ? 'text-white border-b-2 border-[#00F2FF]' : 'hover:text-white'}`}
+                >
+                  {t('movies')}
+                </button>
+                <button 
+                  onClick={() => { setActiveTab('series'); }} 
+                  className={`pb-1 transition-all ${activeTab === 'series' ? 'text-white border-b-2 border-[#00F2FF]' : 'hover:text-white'}`}
+                >
+                  {t('series')}
+                </button>
+                <button 
+                  onClick={() => { setActiveTab('anime'); }} 
+                  className={`pb-1 transition-all ${activeTab === 'anime' ? 'text-white border-b-2 border-[#00F2FF]' : 'hover:text-white'}`}
+                >
+                  {t('anime')}
+                </button>
+                <button 
+                  onClick={() => { setActiveTab('educational'); }} 
+                  className={`pb-1 transition-all ${activeTab === 'educational' ? 'text-white border-b-2 border-[#00F2FF]' : 'hover:text-white'}`}
+                >
+                  {t('educational')}
+                </button>
+                <button 
+                  onClick={() => { setActiveTab('favorites'); }} 
+                  className={`pb-1 transition-all ${activeTab === 'favorites' ? 'text-white border-b-2 border-red-500' : 'hover:text-white text-rose-300'}`}
+                >
+                  {t('myFavorites')}
+                </button>
+                <button 
+                  onClick={() => { setActiveTab('downloads'); }} 
+                  className={`pb-1 transition-all ${activeTab === 'downloads' ? 'text-white border-b-2 border-pink-500' : 'hover:text-pink-400/80 text-pink-300'}`}
+                >
+                  {lang === 'ar' ? 'التنزيلات ⬇️' : 'Downloads ⬇️'}
+                </button>
+              </nav>
+            </div>
+
+            {/* Smart search input & AI Companion Launcher */}
+            <div className="flex items-center gap-3 md:gap-4 overflow-x-auto scrollbar-hide pb-1 w-full lg:w-auto justify-between lg:justify-end shrink-0">
+              <div className="bg-white/5 border border-white/10 px-3 py-1.5 rounded-full flex items-center gap-2 text-xs text-white/80 shrink-0 w-36 md:w-64 focus-within:ring-2 focus-within:ring-cyan-400 transition-all">
+                <Search className="w-3.5 h-3.5 text-white/40" />
+                <input
+                  type="text"
+                  placeholder={t('searchPlaceholder')}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="bg-transparent text-white placeholder-white/30 outline-none w-full text-xs"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="text-white/40 hover:text-white text-[10px]">&times;</button>
+                )}
+              </div>
+
+              {/* Voice Navigation Speech Recognition trigger button with pulsing visual */}
+              <button
+                type="button"
+                onClick={toggleVoiceNavigation}
+                disabled={!speechSupported}
+                className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 border shrink-0 ${
+                  isVoiceActive 
+                    ? 'bg-red-500/10 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)] text-red-400' 
+                    : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10'
+                }`}
+                title={speechSupported ? "Voice Navigation Controls 🎙️" : "Speech Recognition not supported 🔇"}
+                id="voice-mic-trigger"
+              >
+                {isVoiceActive ? (
+                  <>
+                    <Mic className="w-3.5 h-3.5 animate-pulse" />
+                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full animate-ping" />
+                  </>
+                ) : (
+                  <Mic className={`w-3.5 h-3.5 ${speechSupported ? 'text-cyan-400' : 'text-white/20'}`} />
+                )}
+              </button>
+
+              {/* Bot Beep-Boop Action Sparkler */}
+              <button
+                onClick={() => setShowAiModal(true)}
+                className="bg-gradient-to-r from-cyan-400 to-[#7928CA] text-white text-[11px] font-black px-3.5 py-1.5 rounded-full hover:shadow-lg hover:shadow-cyan-400/20 active:scale-95 transition-all flex items-center gap-1.5 shrink-0"
+              >
+                <Sparkles className="w-3.5 h-3.5 animate-pulse text-amber-200" />
+                <span className="hidden sm:inline-block">{t('aiSearchBtn')}</span>
+              </button>
+
+              {/* Active Profile Pill */}
+              {currentProfile && (
+                <div className="flex items-center gap-2 pl-2 border-l border-white/10 shrink-0">
+                  <span className="hidden lg:inline text-xs font-black tracking-widest text-[#00F2FF]">{currentProfile.name.toUpperCase()}</span>
+                  <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${currentProfile.color} flex items-center justify-center overflow-hidden border border-white/20 shrink-0`}>
+                    {currentProfile.customAvatar ? (
+                      <CustomAvatarRenderer config={currentProfile.customAvatar} className="w-7 h-7" />
+                    ) : (
+                      <span className="font-bold text-lg text-white">{currentProfile.avatar}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </header>
+
+          {/* PAGE CONTENT SWITCHER */}
+          <div className="flex-1 overflow-y-auto px-4 md:px-10 py-6 z-10 flex flex-col gap-8">
+            
+            {/* 1. HOME & CATEGORY CHANNELS VIEW */}
+            {activeTab !== 'parent-portal' && activeTab !== 'subscriptions' && activeTab !== 'downloads' && (
+              <>
+                {/* HERO BANNER SLIDER (Sophisticated design background with "Cosmic Buddies" feeling based on user active pick) */}
+                {activeVideo && (
+                  <div className="relative min-h-[360px] md:h-[400px] rounded-[40px] overflow-hidden border border-white/10 shadow-2xl flex flex-col justify-end p-6 md:p-12">
+                    <div 
+                      className="absolute inset-0 bg-cover bg-center transition-all duration-700 opacity-60 bg-blend-multiply" 
+                      style={{ 
+                        backgroundImage: `linear-gradient(90deg, #050508 40%, rgba(5, 5, 8, 0.4) 100%), url(${activeVideo.banner})` 
+                      }}
+                    />
+                    
+                    {/* Floating top indicators */}
+                    <div className="absolute top-6 left-6 md:top-8 md:left-12 flex gap-2">
+                      <span className="bg-[#00F2FF]/20 text-[#00F2FF] text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest border border-[#00F2FF]/30">
+                        {activeVideo.type.toUpperCase()}
+                      </span>
+                      <span className="bg-purple-500/20 text-purple-300 text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest border border-purple-500/30">
+                        {t('allAges')} • {activeVideo.ageCategory}
+                      </span>
+                      <span className="bg-amber-400/20 text-amber-300 text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest border border-amber-400/30">
+                        ⭐ {activeVideo.rating}
+                      </span>
+                    </div>
+
+                    <div className="relative max-w-2xl flex flex-col gap-4">
+                      <h1 className="text-4xl md:text-6xl font-black italic tracking-tighter leading-none uppercase bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-100 to-white">
+                        {activeVideo.title[lang] || activeVideo.title.en}
+                      </h1>
+                      <p className="text-white/70 text-sm leading-relaxed max-w-lg">
+                        {activeVideo.description[lang] || activeVideo.description.en}
+                      </p>
+
+                      {/* Video Player Action controls inside hero */}
+                      <div className="flex flex-wrap items-center gap-4 mt-2">
+                        <button
+                          onClick={() => {
+                            setIsPlaying(true);
+                            // Scroll to player smooth
+                            document.getElementById('video-arena')?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className="bg-white text-black px-8 py-3.5 rounded-2xl font-black flex items-center justify-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-lg shadow-white/10"
+                        >
+                          <Play className="w-4 h-4 fill-current text-black" />
+                          <span>{t('playNow')}</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleToggleFavorite(activeVideo.id)}
+                          className={`px-5 py-3.5 rounded-2xl font-bold border flex items-center gap-2 transition-all ${
+                            favorites.includes(activeVideo.id) 
+                              ? 'bg-rose-600/20 text-rose-300 border-rose-500/40' 
+                              : 'bg-white/10 text-white border-white/10 hover:bg-white/20'
+                          }`}
+                        >
+                          <Heart className={`w-4 h-4 ${favorites.includes(activeVideo.id) ? 'fill-current text-rose-400' : ''}`} />
+                          <span>{favorites.includes(activeVideo.id) ? t('favourite') : '+ My List'}</span>
+                        </button>
+
+                        <span className="text-xs text-white/40">
+                          {activeVideo.views.toLocaleString()} {t('viewsCount')} • {activeVideo.releaseYear}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Banner slider indicators */}
+                    <div className="absolute bottom-6 right-6 md:right-12 flex gap-2">
+                      {videos.slice(0, 4).map((v, i) => (
+                        <button
+                          key={v.id}
+                          onClick={() => setActiveVideo(v)}
+                          className={`h-1.5 transition-all rounded-full ${activeVideo.id === v.id ? 'w-8 bg-[#00F2FF]' : 'w-2 bg-white/20'}`}
+                          title={v.title.en}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* AGE & GENRE FILTER RAILS FOR THE LITTLE AUDIENCE */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#0F0F15]/60 p-4 rounded-3xl border border-white/5">
+                  <div className="flex items-center gap-3 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
+                    <span className="text-xs font-bold text-white/40 uppercase tracking-widest flex items-center gap-1">
+                      <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                      {t('ageFilterTitle')}
+                    </span>
+                    <button
+                      onClick={() => setAgeFilter('all')}
+                      className={`text-xs px-3 py-1.5 rounded-xl font-bold transition-all ${ageFilter === 'all' ? 'bg-[#00F2FF] text-black' : 'bg-white/5 hover:bg-white/10 text-white/80'}`}
+                    >
+                      {t('allAges')}
+                    </button>
+                    <button
+                      onClick={() => setAgeFilter('3-5')}
+                      className={`text-xs px-3 py-1.5 rounded-xl font-bold transition-all ${ageFilter === '3-5' ? 'bg-[#00F2FF] text-black shadow-md shadow-cyan-400/20' : 'bg-white/5 hover:bg-white/10 text-white/80'}`}
+                    >
+                      {t('ages3_5')} 🧸 (3-5)
+                    </button>
+                    <button
+                      onClick={() => setAgeFilter('6-8')}
+                      className={`text-xs px-3 py-1.5 rounded-xl font-bold transition-all ${ageFilter === '6-8' ? 'bg-[#00F2FF] text-black shadow-md shadow-cyan-400/20' : 'bg-white/5 hover:bg-white/10 text-white/80'}`}
+                    >
+                      {t('ages6_8')} 🦄 (6-8)
+                    </button>
+                    <button
+                      onClick={() => setAgeFilter('9-12')}
+                      className={`text-xs px-3 py-1.5 rounded-xl font-bold transition-all ${ageFilter === '9-12' ? 'bg-[#00F2FF] text-black shadow-md shadow-cyan-400/20' : 'bg-white/5 hover:bg-white/10 text-white/80'}`}
+                    >
+                      {t('ages9_12')} 🐲 (9-12)
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto">
+                    <span className="text-xs font-bold text-white/40 uppercase tracking-widest">{t('genresTitle')}</span>
+                    {["all", "adventure", "learning", "comedy", "science", "sports", "art"].map(gen => (
+                      <button
+                        key={gen}
+                        onClick={() => setSelectedGenre(gen)}
+                        className={`text-xs px-3 py-1 rounded-lg transition-all capitalize ${selectedGenre === gen ? 'bg-[#FF0080]/30 text-pink-400 border border-pink-500/50' : 'bg-white/5 hover:bg-white/10 text-white/60'}`}
+                      >
+                        {gen}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* THE MOVIE / ANIME ARENA & PLAYER INTEGRATION (Durable interactive UI) */}
+                <AnimatePresence mode="wait">
+                  {activeVideo && (
+                    <motion.div
+                      key={activeVideo.id}
+                      id="video-arena"
+                      initial={{ opacity: 0, y: 30, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -30, scale: 0.95 }}
+                      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                      className="grid grid-cols-1 lg:grid-cols-3 gap-8 bg-[#0F0F15]/40 p-6 md:p-8 rounded-[35px] border border-white/5 relative overflow-hidden scroll-mt-24"
+                    >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl" />
+                    
+                    {/* Interactive Simulated Streaming Player */}
+                    <div className="lg:col-span-2 flex flex-col gap-4">
+                      
+                      {/* --- WATCH PARTY HUD --- */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-cyan-950/20 via-purple-950/20 to-pink-950/20 p-4 rounded-3xl border border-white/5 shadow-inner">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/15">
+                            <Users className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-black uppercase text-white tracking-widest flex items-center gap-2">
+                              {lang === 'ar' ? "حفلة مشاهدة جماعية" : "Watch Party Hub"}
+                              {watchPartyId && (
+                                <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+                              )}
+                            </h4>
+                            <p className="text-[10px] text-white/50">
+                              {watchPartyId 
+                                ? (lang === 'ar' ? `أنت تشاهد الآن بث مباشر مع أصدقائك! 🥳` : `Streaming synchronously with your friends! 🥳`)
+                                : (lang === 'ar' ? "شاهد أحلا كرتون جماعياً وصوتياً مع رفقاتك في نفس اللحظة!" : "Watch your favorite cartoons synchronized real-time with friends!")
+                              }
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* If in a watch party */}
+                          {watchPartyId ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* Room ID Badge */}
+                              <div className="px-3.5 py-1.5 rounded-xl bg-black/60 border border-cyan-500/30 text-xs font-extrabold text-[#00F2FF] font-mono tracking-wide flex items-center gap-1.5">
+                                <span className="text-[10px] text-white/40 font-sans uppercase font-black">{lang === 'ar' ? 'غرفة:' : 'Room:'}</span>
+                                {watchPartyId}
+                              </div>
+
+                              {/* Copy Link */}
+                              <button
+                                onClick={() => {
+                                  const link = `${window.location.origin}${window.location.pathname}?room=${watchPartyId}`;
+                                  navigator.clipboard.writeText(link);
+                                  const isAr = lang === 'ar';
+                                  setWatchPartyToast(isAr ? "📋 تم نسخ رابط الدعوة بنجاح! شاركه مع رفقاتك!" : "📋 Invite link copied! Send it to your friends!");
+                                  setTimeout(() => setWatchPartyToast(null), 3000);
+                                }}
+                                className="px-3.5 py-1.5 rounded-xl bg-cyan-400 text-black hover:bg-cyan-300 transition-all font-bold text-xs flex items-center gap-1 active:scale-95 shadow-lg shadow-cyan-400/10 cursor-pointer"
+                              >
+                                <Link className="w-3.5 h-3.5" />
+                                <span>{lang === 'ar' ? 'دعوة صديق 🔗' : 'Invite Friend'}</span>
+                              </button>
+
+                              {/* Leave */}
+                              <button
+                                onClick={leaveWatchParty}
+                                className="px-3 py-1.5 rounded-xl bg-red-600/20 border border-red-500/35 text-red-300 hover:bg-red-600/30 font-bold text-xs flex items-center gap-1 active:scale-95 cursor-pointer"
+                              >
+                                <LogOut className="w-3.5 h-3.5" />
+                                <span>{lang === 'ar' ? 'مغادرة 🚪' : 'Leave Party'}</span>
+                              </button>
+                            </div>
+                          ) : (
+                            /* If NOT in a watch party */
+                            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                              {/* Join Input Toggle Button */}
+                              {showJoinPartyInput ? (
+                                <form 
+                                  onSubmit={(e) => { e.preventDefault(); joinWatchParty(joinCodeInput); }}
+                                  className="flex items-center gap-1 w-full sm:w-auto"
+                                >
+                                  <input
+                                    type="text"
+                                    placeholder={lang === 'ar' ? "أدخل كود الحفلة..." : "Enter party code..."}
+                                    value={joinCodeInput}
+                                    onChange={(e) => setJoinCodeInput(e.target.value)}
+                                    className="bg-black/60 border border-white/10 text-white text-xs px-3 py-1.5 rounded-xl max-w-[150px] outline-none focus:border-cyan-400 transition-colors"
+                                  />
+                                  <button
+                                    type="submit"
+                                    className="px-3 py-1.5 rounded-xl bg-cyan-500 text-black text-xs font-bold font-mono transition-all hover:bg-cyan-400 inline-flex items-center"
+                                  >
+                                    <ArrowRight className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowJoinPartyInput(false)}
+                                    className="p-1 px-2 rounded-xl bg-red-500/10 text-red-400 text-xs border border-red-500/20"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </form>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={startWatchParty}
+                                    className="px-4 py-2 rounded-xl bg-[#FF0080]/15 hover:bg-[#FF0080]/25 border border-[#FF0080]/30 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-lg active:scale-95 cursor-pointer"
+                                  >
+                                    <Users className="w-3.5 h-3.5 text-pink-400" />
+                                    <span>{lang === 'ar' ? 'ابدأ حفلة مشاهدة 🍿' : 'Start Watch Party 🍿'}</span>
+                                  </button>
+
+                                  <button
+                                    onClick={() => setShowJoinPartyInput(true)}
+                                    className="px-4 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                                  >
+                                    <Link className="w-3.5 h-3.5" />
+                                    <span>{lang === 'ar' ? 'انضم برمز 🔑' : 'Join Party Code 🔑'}</span>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Video Container viewport */}
+                      <div className="relative aspect-video bg-black rounded-3xl overflow-hidden border border-white/10 group shadow-2xl">
+                        
+                        {/* Fallback custom visualizer with anime dynamic patterns */}
+                        {(!isPlaying || !currentEpisode) ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center select-none bg-gradient-to-tr from-purple-950/70 via-black to-slate-950">
+                            {/* Watermark brand */}
+                            <span className="absolute top-4 left-4 text-[10px] font-bold text-white/20 tracking-widest">KIDS STREAM 4K</span>
+                            {!activeVideo?.videoUrl && episodes.length === 0 ? (
+                               <div className="flex flex-col items-center">
+                                  <img src={activeVideo?.poster} alt="Poster" className="h-48 rounded-xl opacity-50 mb-4 object-cover" />
+                                  <span className="text-sm text-yellow-400 font-bold bg-yellow-400/10 px-4 py-2 rounded-full">
+                                    {lang === 'ar' ? 'لا يوجد سيرفر متاح بعد' : 'No server available yet'}
+                                  </span>
+                               </div>
+                            ) : (
+                               <>
+                                <div className="w-16 h-16 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 hover:scale-110 active:scale-95 transition-all cursor-pointer shadow-xl shadow-purple-500/10" onClick={handlePlayPauseToggle}>
+                                  <Play className="w-8 h-8 fill-current text-[#00F2FF] translate-x-0.5" />
+                                </div>
+                                <span className="text-xs text-white/60 mt-4 font-semibold">
+                                  {currentEpisode ? `${t('playNow')} E${currentEpisode.episodeNumber}: ${currentEpisode.title[lang] || currentEpisode.title.en}` : 'Select an Episode below'}
+                                </span>
+                               </>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="absolute inset-0 w-full h-full bg-slate-950 flex items-center justify-center">
+                            {/* Realistic cartoon stream element with BigBuckBunny falling links */}
+                            {currentEpisode?.videoUrl?.includes('embed') ? (
+                              <iframe
+                                src={currentEpisode.videoUrl}
+                                className="w-full h-full border-0 rounded-2xl"
+                                allowFullScreen
+                                allow="autoplay; encrypted-media"
+                              />
+                            ) : (
+                              <video
+                                ref={videoRef}
+                                src={currentEpisode?.videoUrl}
+                                className="w-full h-full object-contain"
+                                autoPlay
+                                controls={false}
+                                onLoadedMetadata={() => {
+                                if (videoRef.current) {
+                                  // Restore playback rate speed
+                                  videoRef.current.playbackRate = playerSpeed;
+                                  
+                                  // Restore progress
+                                  if (videoProgress > 0 && videoProgress < 100) {
+                                    const restoreTime = (videoProgress / 100) * videoRef.current.duration;
+                                    videoRef.current.currentTime = restoreTime || 0;
+                                  }
+                                  
+                                  setPlayerDuration(videoRef.current.duration || 0);
+                                  setPlayerCurrentTime(videoRef.current.currentTime || 0);
+                                }
+                              }}
+                              onTimeUpdate={() => {
+                                if (videoRef.current) {
+                                  const ct = videoRef.current.currentTime || 0;
+                                  const dur = videoRef.current.duration || 0;
+                                  setPlayerCurrentTime(ct);
+                                  setPlayerDuration(dur);
+                                  const pct = (ct / dur) * 100;
+                                  setVideoProgress(Math.min(pct || 0, 100));
+
+                                  // Auto-play trigger: when reaching the very end and nextEpisode is present
+                                  if (dur > 0 && ct >= dur - 0.5 && nextEpisode && !autoplayCancelled) {
+                                    handlePlayNextEpisode();
+                                  }
+                                }
+                              }}
+                              onEnded={() => {
+                                if (nextEpisode && !autoplayCancelled) {
+                                  handlePlayNextEpisode();
+                                } else {
+                                  setIsPlaying(false);
+                                }
+                              }}
+                            />
+                            )}
+
+                            {/* Skip Intro Overlay */}
+                            {(activeVideo?.type === 'series' || activeVideo?.type === 'anime') && 
+                             (playerCurrentTime >= 5 && playerCurrentTime <= 30) && (
+                              <button
+                                type="button"
+                                onClick={handleSkipIntro}
+                                className="absolute bottom-20 left-4 z-40 bg-[#0F0F15]/95 hover:bg-[#151522] border-2 border-amber-400/80 text-white font-black text-xs py-2.5 px-4 rounded-2xl flex items-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all duration-300 hover:scale-105 active:scale-95 animate-fade-in"
+                              >
+                                <FastForward className="w-4 h-4 text-amber-400 fill-current animate-pulse" />
+                                <span>{lang === 'ar' ? "تخطي المقدمة 🚀" : "Skip Intro 🚀"}</span>
+                              </button>
+                            )}
+
+                            {/* Skip Intro Toast Alert */}
+                            {showSkipIntroToast && (
+                              <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-emerald-500/95 text-white font-black text-xs px-4 py-2.5 rounded-2xl border border-emerald-400/30 shadow-lg z-50 flex items-center gap-1.5 animate-bounce">
+                                <span>🚀 {lang === 'ar' ? "تم تخطي المقدمة بنجاح!" : "Intro successfully skipped!"}</span>
+                              </div>
+                            )}
+
+                            {/* Next Episode Autoplay Countdown Timer overlay */}
+                            {nextEpisode && playerDuration > 0 && (playerDuration - playerCurrentTime) <= 10 && !autoplayCancelled && (
+                              <div className="absolute bottom-20 right-4 z-40 bg-[#0F0F15]/95 backdrop-blur-md border border-cyan-400/40 p-4 rounded-3xl flex flex-col gap-3 shadow-[0_10px_30px_rgba(0,242,255,0.15)] max-w-xs animate-fade-in text-left">
+                                <span className="text-[10px] text-cyan-400 font-extrabold tracking-widest uppercase">
+                                  {lang === 'ar' ? "الحلقة القادمة تبدأ في" : "Next Episode In"}
+                                </span>
+                                <div className="flex items-center gap-3">
+                                  {/* Circular or pill-like countdown indicator */}
+                                  <div className="w-10 h-10 rounded-full bg-cyan-400/10 flex items-center justify-center border-2 border-cyan-400 text-cyan-200 font-black text-sm select-none animate-pulse">
+                                    {Math.max(1, Math.ceil(playerDuration - playerCurrentTime))}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <h4 className="text-xs font-black text-white truncate">
+                                      {nextEpisode.title[lang] || nextEpisode.title.en}
+                                    </h4>
+                                    <span className="text-[9px] text-white/50 font-mono">
+                                      {lang === 'ar' ? `حلقة رقم ${nextEpisode.episodeNumber}` : `Episode ${nextEpisode.episodeNumber}`}
+                                    </span>
+                                  </div>
+                                </div>
+                                
+                                <div className="flex items-center gap-2 mt-1">
+                                  <button
+                                    type="button"
+                                    onClick={handlePlayNextEpisode}
+                                    className="flex-1 bg-gradient-to-r from-cyan-400 to-[#FF0080] hover:from-cyan-300 hover:to-pink-500 text-white font-black text-[10px] py-1.5 px-3 rounded-xl shadow-md transition-all hover:scale-102 active:scale-98 flex items-center justify-center gap-1"
+                                  >
+                                    <Play className="w-3 h-3 fill-current text-white" />
+                                    <span>{lang === 'ar' ? "تشغيل الآن" : "Play Now"}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAutoplayCancelled(true)}
+                                    className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white font-bold text-[10px] rounded-xl transition-all"
+                                  >
+                                    {lang === 'ar' ? "إلغاء الاستمرار" : "Cancel"}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Casting Simulation Overlay */}
+                            {isCasting && (
+                              <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center gap-3 z-30 animate-pulse text-center p-4">
+                                <Tv className="w-16 h-16 text-[#00F2FF]" />
+                                <span className="text-sm font-bold text-cyan-200">Streaming live on KidsLivingRoom Chromecast 📡</span>
+                                <span className="text-[10px] text-white/50">Keep this preview tab active as primary transmitter</span>
+                              </div>
+                            )}
+
+                            {/* Watermark logo */}
+                            <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md text-[9px] text-[#00F2FF] font-black tracking-widest py-1 px-2.5 rounded-full border border-cyan-500/30 flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-[#FF0080] animate-ping" />
+                              KIDS STREAM PRO
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Interactive Player Controls overlay hud */}
+                        {!(currentEpisode?.videoUrl?.includes('embed')) && (
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black via-black/80 to-transparent p-4 flex flex-col gap-3 group-hover:opacity-100 transition-opacity duration-300">
+                          
+                          {/* Seek bar */}
+                          <div 
+                            className="w-full h-1.5 bg-white/20 rounded-full cursor-pointer relative"
+                            onClick={handleProgressClick}
+                          >
+                            <div 
+                              className="h-full bg-gradient-to-r from-cyan-400 to-[#FF0080] rounded-full relative"
+                              style={{ width: `${videoProgress}%` }}
+                            >
+                              <div className="absolute -right-1 -top-1 w-3.5 h-3.5 bg-white rounded-full shadow border-2 border-[#FF0080]" />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                              <button 
+                                onClick={handlePlayPauseToggle}
+                                className="text-white hover:text-cyan-400 transition-colors"
+                              >
+                                {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+                              </button>
+
+                              <button 
+                                onClick={() => setVideoProgress(0)}
+                                className="text-white hover:text-cyan-400 transition-colors"
+                              >
+                                <RotateCcw className="w-4 h-4" />
+                              </button>
+
+                              {/* Simulated remaining dynamic clock */}
+                              <span className="text-[10px] text-white/40 font-bold">
+                                {currentEpisode ? `E${currentEpisode.episodeNumber} • ${Math.round(videoProgress)}% completed` : 'No file loaded'}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              {/* SPEED SWITCHER BUTTONS */}
+                              <div className="flex items-center gap-2 bg-black/60 border border-white/10 rounded-full px-2 py-1">
+                                <span className="text-[9px] text-white/40 uppercase font-extrabold">{t('speed')}</span>
+                                <button 
+                                  onClick={() => {
+                                    const nextSpeed = Math.max(0.25, Number((playerSpeed - 0.25).toFixed(2)));
+                                    setPlayerSpeed(nextSpeed);
+                                    if (videoRef.current) videoRef.current.playbackRate = nextSpeed;
+                                  }}
+                                  className="text-white hover:text-cyan-400 transition-colors disabled:opacity-50"
+                                  disabled={playerSpeed <= 0.25}
+                                >
+                                  -
+                                </button>
+                                <span className="text-[10px] text-white font-bold min-w-[32px] text-center">
+                                  {playerSpeed.toFixed(2)}x
+                                </span>
+                                <button 
+                                  onClick={() => {
+                                    const nextSpeed = Math.min(3.0, Number((playerSpeed + 0.25).toFixed(2)));
+                                    setPlayerSpeed(nextSpeed);
+                                    if (videoRef.current) videoRef.current.playbackRate = nextSpeed;
+                                  }}
+                                  className="text-white hover:text-cyan-400 transition-colors disabled:opacity-50"
+                                  disabled={playerSpeed >= 3}
+                                >
+                                  +
+                                </button>
+                              </div>
+
+                              {/* AUDIO SELECTOR */}
+                              <div className="flex items-center gap-1">
+                                <span className="text-[9px] text-cyan-400 font-extrabold">🔊 DUB</span>
+                                <select 
+                                  value={selectedAudio} 
+                                  onChange={(e) => setSelectedAudio(e.target.value)}
+                                  className="bg-black/60 border border-white/10 text-white text-[10px] py-0.5 px-1 rounded"
+                                >
+                                  {activeVideo.languageOptions?.dubbed?.map(d => (
+                                    <option key={d} value={d}>{d.toUpperCase()}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* SUBTITLE SELECTOR */}
+                              <div className="flex items-center gap-1">
+                                <span className="text-[9px] text-pink-400 font-bold">💬 CC</span>
+                                <select
+                                  value={selectedSubtitle}
+                                  onChange={(e) => setSelectedSubtitle(e.target.value)}
+                                  className="bg-black/60 border border-white/10 text-white text-[10px] py-0.5 px-1 rounded"
+                                >
+                                  <option value="none">{t('noSubtitles')}</option>
+                                  {activeVideo.languageOptions?.subtitled?.map(s => (
+                                    <option key={s} value={s}>{s.toUpperCase()}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* QUALITY SELECTOR */}
+                              <select 
+                                value={playerQuality} 
+                                onChange={(e) => setPlayerQuality(e.target.value)}
+                                className="bg-black/60 border border-white/10 text-white text-[10px] py-0.5 px-1 rounded font-bold"
+                              >
+                                <option value="480p">480p</option>
+                                <option value="720p">720p HD</option>
+                                <option value="1080p">1080p FHD</option>
+                                <option value="4k">2160p 4K</option>
+                              </select>
+
+                              {/* PIP Screen Trigger */}
+                              <button 
+                                onClick={() => setIsPip(!isPip)} 
+                                className={`p-1 rounded transition-colors ${isPip ? 'bg-cyan-500 text-black' : 'hover:bg-white/10 text-white'}`}
+                                title={t('pipMode')}
+                              >
+                                <Monitor className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Chromecast Emulator toggle */}
+                              <button 
+                                onClick={() => setIsCasting(!isCasting)} 
+                                className={`p-1 rounded transition-colors ${isCasting ? 'bg-amber-500 text-black' : 'hover:bg-white/10 text-white'}`}
+                                title={t('castSim')}
+                              >
+                                <Tv className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        )}
+                      </div>
+
+                      {/* Download and Offline action button bar */}
+                      <div className="flex flex-wrap items-center justify-between gap-4 bg-[#1A1A2E]/60 p-4 rounded-2xl border border-white/5">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-bold text-white/50">{t('videoSource')}:</span>
+                          <span className="text-xs font-mono text-cyan-300 break-all select-all bg-black/40 px-3 py-1 rounded">
+                            {currentEpisode?.videoUrl || 'Fallback player stream active'}
+                          </span>
+                        </div>
+
+                        <button
+                          onClick={handleDownloadOfflineSimulation}
+                          className={`text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2 transition-all ${
+                            downloadState === 'done' 
+                              ? 'bg-emerald-600 text-white' 
+                              : downloadState === 'loading'
+                              ? 'bg-[#FF0080] text-white animate-pulse'
+                              : 'bg-white/5 border border-white/10 text-cyan-400 hover:bg-white/10'
+                          }`}
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>
+                            {downloadState === 'done' 
+                              ? t('downloadComplete') 
+                              : downloadState === 'loading'
+                              ? t('downloading')
+                              : t('offlineDownload')}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* EPISODES DISCOVERY CAROUSEL */}
+                      <div className="flex flex-col gap-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-purple-950/20 to-cyan-950/20 p-4 rounded-2xl border border-white/5">
+                          <h3 className="text-md font-black italic tracking-wide text-[#00F2FF]">
+                            {t('series')} - {t('latest')}
+                          </h3>
+                          {episodes.length > 0 && (
+                            <button
+                              onClick={handleBatchDownloadSeasonAnimation}
+                              className={`text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2 transition-all shadow-md active:scale-95 ${
+                                seriesDownloadState === 'done' 
+                                  ? 'bg-emerald-600 text-white shadow-emerald-700/20' 
+                                  : seriesDownloadState === 'loading'
+                                  ? 'bg-gradient-to-r from-[#FF0080] to-purple-800 text-white shadow-[#FF0080]/20 animate-pulse'
+                                  : 'bg-[#FF0080]/20 border border-[#FF0080]/30 hover:bg-[#FF0080]/30 text-pink-300'
+                              }`}
+                            >
+                              <Download className={`w-3.5 h-3.5 ${seriesDownloadState === 'loading' ? 'animate-bounce' : ''}`} />
+                              <span>
+                                {seriesDownloadState === 'done' 
+                                  ? {
+                                      ar: "تم تنزيل الموسم بالكامل! 🤩🏕️",
+                                      en: "Complete Season Downloaded! 🤩🏕️",
+                                      fr: "Saison complète téléchargée ! 🤩🏕️",
+                                      de: "Komplette Staffel heruntergeladen! 🤩🏕️",
+                                      es: "¡Temporada completa descargada! 🤩🏕️",
+                                      it: "Stagione completa scaricata! 🤩🏕️"
+                                    }[lang] || "Complete Season Downloaded! 🤩🏕️"
+                                  : seriesDownloadState === 'loading'
+                                  ? `${{
+                                      ar: "جاري التحميل كحزمة واحدة",
+                                      en: "Batch Downloading Season",
+                                      fr: "Téléchargement en lot de la saison",
+                                      de: "Staffel wird heruntergeladen",
+                                      es: "Descargando temporada",
+                                      it: "Scaricando la stagione"
+                                    }[lang] || "Batch Downloading..."} (${seriesDownloadProgress}%)`
+                                  : {
+                                      ar: "تنزيل السلسلة (الموسم بالكامل) 📥",
+                                      en: "Download Series (Full Season) 📥",
+                                      fr: "Télécharger la série (Saison complète) 📥",
+                                      de: "Serie herunterladen (Ganze Staffel) 📥",
+                                      es: "Descargar serie (Temporada completa) 📥",
+                                      it: "Scarica la serie (Stagione completa) 📥"
+                                    }[lang] || "Download Series (Full Season) 📥"}
+                              </span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* KID-FRIENDLY BATCH DOWNLOAD DETAILED PROGRESS WINDOW */}
+                        {seriesDownloadState === 'loading' && (
+                          <div className="bg-[#1A1A2E]/90 border border-[#FF0080]/30 rounded-3xl p-5 flex flex-col gap-3 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-[#FF0080]/5 rounded-full blur-xl pointer-events-none" />
+                            
+                            <div className="flex items-center justify-between gap-4 z-10">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-[#FF0080]/20 rounded-xl text-pink-400">
+                                  <Sparkles className="w-4 h-4 animate-spin text-amber-300" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="font-extrabold text-xs text-white">
+                                    {lang === 'ar' ? 'رحلة حفظ الموسم أوفلاين! 🎒✨' : 'Saving Season to Offline Backpack! 🎒✨'}
+                                  </span>
+                                  <span className="text-[10px] text-pink-300 font-bold">
+                                    {getOfflineCuteStepMessage(seriesDownloadProgress, lang)}
+                                  </span>
+                                </div>
+                              </div>
+                              <span className="text-sm font-black text-[#00F2FF]">{seriesDownloadProgress}%</span>
+                            </div>
+
+                            {/* Outer Progress bar */}
+                            <div className="w-full h-2.5 bg-white/5 rounded-full overflow-hidden border border-white/10 z-10">
+                              <div 
+                                className="h-full bg-gradient-to-r from-[#FF0080] via-purple-500 to-[#00F2FF] rounded-full transition-all duration-300"
+                                style={{ width: `${seriesDownloadProgress}%` }}
+                              />
+                            </div>
+
+                            <div className="flex justify-between items-center text-[9px] text-white/40 font-mono z-10">
+                              <span>
+                                {lang === 'ar' ? `حلقة ${currentDownloadEpisodeIndex + 1} من ${episodes.length}` : `Saving ep ${currentDownloadEpisodeIndex + 1} of ${episodes.length}`}
+                              </span>
+                              <span className="text-[#00F2FF] font-semibold truncate max-w-[180px]">
+                                {episodes[currentDownloadEpisodeIndex]?.title[lang] || episodes[currentDownloadEpisodeIndex]?.title.en}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {episodes.length === 0 ? (
+                          <div className="bg-white/5 rounded-2xl p-6 text-center text-xs text-white/40">
+                            No episodes uploaded for this series yet. Add some in the Parent secure portal.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {episodes.map(ep => {
+                              const isCurrent = currentEpisode?.id === ep.id;
+                              return (
+                                <div
+                                  key={ep.id}
+                                  onClick={() => {
+                                    setCurrentEpisode(ep);
+                                    setIsPlaying(true);
+                                    const savedPct = currentProfile ? (episodeProgressMap[`${currentProfile.id}_${ep.id}`] || 0) : 0;
+                                    setVideoProgress(savedPct);
+                                  }}
+                                  className={`flex flex-col bg-[#1A1A2E]/80 rounded-xl border transition-all duration-300 cursor-pointer overflow-hidden ${
+                                    isCurrent ? 'border-cyan-400 scale-[1.02] shadow-lg shadow-cyan-400/10 bg-white/5' : 'border-white/5 hover:border-white/10 hover:bg-white/5'
+                                  }`}
+                                >
+                                  <div className="relative w-full aspect-video bg-black shrink-0">
+                                    <img src={ep.thumbnail || activeVideo?.poster || activeVideo?.banner || 'https://images.unsplash.com/photo-1542204165-65bf26472b9b?q=80&w=400'} alt={ep.title[lang] || ep.title.en} className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
+                                    {isCurrent && (
+                                      <div className="absolute inset-0 bg-cyan-400/20 flex items-center justify-center backdrop-blur-[1px]">
+                                        <Play className="w-12 h-12 text-white fill-white shadow-lg drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]" />
+                                      </div>
+                                    )}
+                                    {/* Watched Progress Indicator */}
+                                    {(() => {
+                                      const epProg = currentProfile ? (episodeProgressMap[`${currentProfile.id}_${ep.id}`] || 0) : 0;
+                                      if (epProg > 0) {
+                                        return (
+                                          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
+                                            <div className="h-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.8)]" style={{ width: `${Math.min(epProg, 100)}%` }} />
+                                          </div>
+                                        );
+                                      }
+                                      return null;
+                                    })()}
+                                  </div>
+                                  <div className="p-4 flex flex-col gap-1.5 flex-1 w-full bg-gradient-to-b from-[#1A1A2E]/50 to-transparent">
+                                    <div className="flex items-center justify-between gap-2 w-full">
+                                      <p className={`font-extrabold text-sm line-clamp-1 flex-1 ${isCurrent ? 'text-cyan-400' : 'text-white'}`}>
+                                        E{ep.episodeNumber}: {ep.title[lang] || ep.title.en}
+                                      </p>
+                                      <span className="text-[10px] font-mono font-bold text-white/50 bg-black/40 px-1.5 py-0.5 rounded border border-white/5 shrink-0">
+                                        {ep.duration}
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-white/50 line-clamp-2 leading-relaxed">
+                                      {ep.description[lang] || ep.description.en}
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                    </div>
+
+                    {/* CLIENTS REVIEWS, SPONSOR ADS BLOCK - Right sidebar */}
+                    <div className="flex flex-col gap-6">
+                      
+                      {/* --- WATCH PARTY TAB SWITCHER --- */}
+                      {watchPartyId && (
+                        <div className="flex bg-black/60 p-1.5 rounded-2xl border border-white/5 gap-2">
+                          <button
+                            onClick={() => setActiveSidebarTab('chat')}
+                            className={`flex-1 py-1.5 rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 ${
+                              activeSidebarTab === 'chat'
+                                ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/10 font-bold'
+                                : 'text-white/60 hover:text-white hover:bg-white/5 font-bold'
+                            }`}
+                          >
+                            <MessageSquare className="w-4 h-4" />
+                            <span>{lang === 'ar' ? "محادثات الحفلة 🍿" : "Live Chat 🍿"}</span>
+                          </button>
+                          <button
+                            onClick={() => setActiveSidebarTab('reviews')}
+                            className={`flex-1 py-1.5 rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 ${
+                              activeSidebarTab === 'reviews'
+                                ? 'bg-pink-500 text-white shadow-lg shadow-pink-500/10 font-bold'
+                                : 'text-white/60 hover:text-white hover:bg-white/5 font-bold'
+                            }`}
+                          >
+                            <Star className="w-4 h-4" />
+                            <span>{lang === 'ar' ? "التقييمات ⭐" : "Reviews ⭐"}</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* --- WATCH PARTY LIVE SIDEBAR CHAT PANEL --- */}
+                      {(watchPartyId && activeSidebarTab === 'chat') ? (
+                        <div className="flex flex-col gap-4 bg-gradient-to-b from-[#0B0B14] to-[#121226] border border-cyan-500/15 p-5 rounded-[30px] shadow-2xl relative overflow-hidden h-[550px]">
+                          {/* Inner soft blur */}
+                          <div className="absolute -top-10 -left-10 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
+                          
+                          {/* Section Title & Presence Bead */}
+                          <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                            <div className="flex items-center gap-2">
+                              <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                              </span>
+                              <h3 className="text-xs font-black uppercase tracking-wider text-cyan-400">
+                                {lang === 'ar' ? "الأصدقاء في الحفلة" : "Party Friends"}
+                              </h3>
+                            </div>
+                            <span className="text-[10px] font-mono text-white/50 bg-white/5 px-2 py-0.5 rounded-lg border border-white/10">
+                              {watchPartyRoom?.users?.length || 1} {lang === 'ar' ? "نشط" : "active"}
+                            </span>
+                          </div>
+
+                          {/* Party Active Avatars / Presence */}
+                          <div className="flex flex-wrap items-center gap-1.5 bg-black/40 p-3 rounded-2xl border border-white/5 max-h-[85px] overflow-y-auto">
+                            {watchPartyRoom?.users?.map((usr: any) => (
+                              <div
+                                key={usr.id}
+                                className="flex items-center gap-1 bg-white/5 px-2.5 py-1 rounded-xl border border-white/5 hover:bg-white/10 transition-colors"
+                              >
+                                <span className="text-sm">{usr.avatar || '🐼'}</span>
+                                <span className="text-[10px] font-bold text-white/95" style={{ color: usr.color || '#fff' }}>
+                                  {usr.name}
+                                </span>
+                                {watchPartyRoom?.hostId === usr.id && (
+                                  <Crown className="w-3 h-3 text-amber-400 fill-amber-400/20" title="Host" />
+                                )}
+                              </div>
+                            )) || (
+                              <div className="flex items-center gap-1 bg-white/5 px-2.5 py-1 rounded-xl border border-white/5">
+                                <span className="text-sm">{currentProfile?.avatar || '🐼'}</span>
+                                <span className="text-[10px] font-bold text-white/95">{currentProfile?.name}</span>
+                                <Crown className="w-3 h-3 text-amber-400 fill-amber-400/20" />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Messages Scrollbox */}
+                          <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2.5 scrollbar-thin scrollbar-thumb-white/10">
+                            {watchPartyRoom?.messages && watchPartyRoom.messages.length > 0 ? (
+                              watchPartyRoom.messages.map((msg: any) => {
+                                const isMe = msg.userId === currentProfile?.id;
+                                if (msg.system) {
+                                  return (
+                                    <div key={msg.id} className="text-center py-1 text-[9px] font-black uppercase tracking-wider text-pink-400 bg-[#FF0080]/10 rounded-lg px-2 border border-pink-500/10">
+                                      {msg.text}
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div
+                                    key={msg.id}
+                                    className={`flex flex-col max-w-[85%] ${isMe ? 'self-end items-end' : 'self-start items-start'}`}
+                                  >
+                                    <div className="flex items-center gap-1 mb-0.5">
+                                      <span className="text-sm">{msg.userAvatar || '🐼'}</span>
+                                      <span className="text-[9px] font-black text-white/50 uppercase">
+                                        {msg.userName}
+                                      </span>
+                                    </div>
+                                    <div
+                                      className={`px-3 py-2 rounded-2xl text-[11px] leading-relaxed break-words font-semibold ${
+                                        isMe
+                                          ? 'bg-gradient-to-r from-[#00F2FF] to-cyan-500 text-black rounded-tr-none font-bold'
+                                          : 'bg-white/10 text-white rounded-tl-none border border-white/5'
+                                      }`}
+                                    >
+                                      {msg.text}
+                                    </div>
+                                    <span className="text-[8px] text-white/30 mt-0.5 px-1">
+                                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center select-none bg-black/20 rounded-2xl border border-white/5">
+                                <span className="text-2xl animate-bounce">🍿</span>
+                                <p className="text-[11px] font-bold text-white/40 mt-3 capitalize text-center">
+                                  {lang === 'ar' ? "لا توجد رسائل بعد! اكتب شيئاً لطيفاً!" : "No chats yet! Say hello to friends!"}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Live Chat Form input */}
+                          <form onSubmit={handleSendChatMessage} className="flex items-center gap-1.5 pt-2 border-t border-[#00F2FF]/10">
+                            <input
+                              type="text"
+                              value={chatInputText}
+                              onChange={(e) => setChatInputText(e.target.value)}
+                              placeholder={lang === 'ar' ? "اكتب رسالة لأصدقائك..." : "Type a message..."}
+                              className="flex-1 bg-black/60 border border-white/10 text-white text-[11px] px-3.5 py-2 rounded-2xl outline-none focus:border-cyan-400 transition-colors"
+                            />
+                            <button
+                              type="submit"
+                              className="p-2.5 rounded-2xl bg-cyan-500 text-black hover:bg-cyan-400 transition-all font-bold active:scale-95 shadow-lg shadow-cyan-400/15 cursor-pointer"
+                            >
+                              <Send className="w-4 h-4" />
+                            </button>
+                          </form>
+                        </div>
+                      ) : (
+                        <>
+                      
+                      {/* INTERACTIVE COSMIC STAR-RATING COMPONENT */}
+                      <div className="bg-gradient-to-br from-[#0B0B14] to-[#121226] border border-cyan-500/15 p-5 rounded-3xl flex flex-col gap-4 relative overflow-hidden group/rating shadow-xl">
+                        {/* Animated background cosmic blur */}
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-[#00F2FF]/5 rounded-full blur-2xl pointer-events-none group-hover/rating:bg-[#00F2FF]/10 transition-colors duration-500" />
+                        
+                        <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                          <div className="flex flex-col">
+                            <h3 className="text-xs font-black uppercase text-pink-400 tracking-wider">
+                              {lang === 'ar' ? "⭐ تقييم المغامرة السحرية" : "⭐ Cosmic Adventure Rating"}
+                            </h3>
+                            <span className="text-[10px] text-white/50 leading-normal">
+                              {lang === 'ar' ? "صوّت لرأيك في هذا الفيديو الممتع!" : "How fun was this watch? Vote now!"}
+                            </span>
+                          </div>
+                          <div className="bg-white/5 px-2.5 py-1 rounded-xl border border-white/10 flex items-center gap-1">
+                            <Star className="w-3 h-3 text-amber-400 fill-current" />
+                            <span className="text-[11px] font-mono font-bold text-white">
+                              {(activeVideo.rating || 5.0).toFixed(1)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Star container */}
+                        <div className="flex flex-col items-center gap-3 bg-black/40 p-3 rounded-2xl border border-white/5">
+                          <div className="flex items-center gap-2">
+                            {[1, 2, 3, 4, 5].map((stars) => {
+                              const isStarred = (hoveredStars !== null ? stars <= hoveredStars : stars <= (userRatings[activeVideo.id] || 0));
+                              const isCurrentAverage = !hoveredStars && !userRatings[activeVideo.id] && stars <= Math.round(activeVideo.rating || 5);
+                              
+                              return (
+                                <button
+                                  key={stars}
+                                  type="button"
+                                  onMouseEnter={() => setHoveredStars(stars)}
+                                  onMouseLeave={() => setHoveredStars(null)}
+                                  onClick={() => handleRateVideo(activeVideo.id, stars)}
+                                  disabled={ratingSubmitLoading === activeVideo.id}
+                                  className="relative p-1 focus:outline-none transition-transform hover:scale-125 duration-200 active:scale-90"
+                                  title={`Rate ${stars} Stars`}
+                                  id={`star-btn-${stars}`}
+                                >
+                                  <Star
+                                    className={`w-7 h-7 transition-all duration-300 ${
+                                      isStarred 
+                                        ? 'text-amber-400 fill-current drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]' 
+                                        : isCurrentAverage 
+                                        ? 'text-amber-500/40 fill-current'
+                                        : 'text-white/20 hover:text-white/40'
+                                    }`}
+                                  />
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Mood text response helper */}
+                          <div className="min-h-[16px] text-center">
+                            {(hoveredStars || userRatings[activeVideo.id]) ? (
+                              <span className="text-[10px] font-bold text-cyan-300 animate-pulse">
+                                {getCosmicMoodText(hoveredStars || userRatings[activeVideo.id], lang)}
+                              </span>
+                            ) : (
+                              <span className="text-[9px] text-white/30 italic">
+                                {lang === 'ar' ? "مرر الماوس فوق النجوم لاختيار تقييمك" : "Hover or tap to adjust rating"}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Feedback Alerts / Message boxes */}
+                        {ratingSuccessMessage === activeVideo.id && (
+                          <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 text-[10px] font-semibold p-2.5 rounded-xl text-center flex items-center justify-center gap-1.5 animate-scale-up">
+                            <span>🎉</span>
+                            <span>
+                              {lang === 'ar' 
+                                ? "تم تسجيل تقييمك بنجاح! شكراً لك! ❤️🚀" 
+                                : "Cosmic vote registered successfully! ❤️🚀"}
+                            </span>
+                          </div>
+                        )}
+
+                        {ratingSubmitLoading === activeVideo.id && (
+                          <div className="flex items-center justify-center gap-2 text-white/50 text-[10px] py-1">
+                            <div className="w-3.5 h-3.5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                            <span>{lang === 'ar' ? "جاري الحفظ في الخادم..." : "Beam-casting rating..."}</span>
+                          </div>
+                        )}
+
+                        {/* Rating summary analysis log stats */}
+                        <div className="flex justify-between items-center text-[10px] text-white/40 font-bold px-1 select-none">
+                          <span>{lang === 'ar' ? "متوسط التقييم العام:" : "Average Rating:"}</span>
+                          <span className="text-[#00F2FF] font-mono">{(activeVideo.rating || 5.0).toFixed(1)} / 5.0</span>
+                        </div>
+                      </div>
+
+                      {/* Sidebar Advert Banner ad */}
+                      {ads.filter(ad => ad.isActive && ad.type === 'sidebar').slice(0, 1).map(ad => (
+                        <div key={ad.id} className="bg-gradient-to-br from-[#1A1A2E] to-purple-950/40 p-5 rounded-3xl border border-white/5 flex flex-col gap-3 relative overflow-hidden group">
+                          <span className="absolute top-3 right-3 bg-[#FF0080]/90 text-white text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest">KIDS ECO FRIENDLY</span>
+                          <h4 className="text-xs font-extrabold uppercase text-white/50 tracking-wider">Educational Box Ad</h4>
+                          <img src={ad.imageUrl} alt={ad.title} className="w-full h-28 object-cover rounded-xl" />
+                          <p className="text-xs font-bold">{ad.title}</p>
+                          <a href={ad.targetUrl} className="bg-white/5 hover:bg-white/10 border border-white/10 text-center py-2 text-xs font-bold text-cyan-400 rounded-xl transition-all">
+                            {t('subscribeNow')}
+                          </a>
+                        </div>
+                      ))}
+
+                      {/* Related Cosmic Journeys / More Like This */}
+                      {(() => {
+                        const related = videos.filter(
+                          v => v.id !== activeVideo.id && !isBlockedByParentFilters(v) && (v.genres || []).some(g => (activeVideo.genres || []).includes(g))
+                        ).slice(0, 4);
+                        if (related.length === 0) return null;
+                        return (
+                          <div className="bg-[#0F0F15] p-5 rounded-3xl border border-white/5 flex flex-col gap-4 animate-fade-in">
+                            <h3 className="text-sm font-black tracking-tight text-white/90 flex items-center gap-2 border-b border-white/5 pb-2">
+                              <Sparkles className="w-4 h-4 text-[#00F2FF]" />
+                              <span>
+                                {{
+                                  ar: "مغامرات مشابهة 💫🍿",
+                                  en: "More Like This 💫🍿",
+                                  fr: "Dans le même style 💫🍿",
+                                  de: "Mehr davon 💫🍿",
+                                  es: "Más como esto 💫🍿",
+                                  it: "Altri simili 💫🍿"
+                                }[lang] || "More Like This 💫🍿"}
+                              </span>
+                            </h3>
+
+                            <div className="flex flex-col gap-3">
+                              {related.map(vid => (
+                                <div
+                                  key={vid.id}
+                                  onClick={() => {
+                                    setActiveVideo(vid);
+                                    setTimeout(() => {
+                                      document.getElementById('video-arena')?.scrollIntoView({ behavior: 'smooth' });
+                                    }, 100);
+                                  }}
+                                  className="group/item relative flex gap-3 p-2 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-cyan-500/30 cursor-pointer transition-all duration-300"
+                                >
+                                  {/* Thumbnail */}
+                                  <div className="w-16 h-20 rounded-xl overflow-hidden relative flex-shrink-0 bg-black">
+                                    <img
+                                      src={vid.poster}
+                                      alt={vid.title[lang] || vid.title.en}
+                                      className="w-full h-full object-cover group-hover/item:scale-105 transition-transform duration-500"
+                                    />
+                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-opacity">
+                                      <Play className="w-5 h-5 text-cyan-400 fill-current" />
+                                    </div>
+                                  </div>
+
+                                  {/* Details */}
+                                  <div className="flex-1 flex flex-col justify-between py-0.5 text-left min-w-0">
+                                    <div>
+                                      <h4 className="font-extrabold text-xs text-white group-hover/item:text-cyan-300 transition-colors line-clamp-1">
+                                        {vid.title[lang] || vid.title.en}
+                                      </h4>
+                                      <p className="text-[10px] text-white/40 line-clamp-2 mt-1 leading-snug">
+                                        {vid.description[lang] || vid.description.en}
+                                      </p>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                                      <span className="text-[8px] font-semibold uppercase bg-pink-500/10 text-pink-400 border border-pink-500/15 py-0.5 px-1.5 rounded-md">
+                                        {vid.type}
+                                      </span>
+                                      {(vid.genres || []).slice(0, 2).map((g) => (
+                                        <span
+                                          key={g}
+                                          className={`text-[8px] font-semibold py-0.5 px-1.5 rounded-md border ${
+                                            (activeVideo.genres || []).includes(g)
+                                              ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'
+                                              : 'bg-white/5 text-white/50 border-white/5'
+                                          }`}
+                                        >
+                                          {g}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Interactive Comments system */}
+                      <div className="bg-[#0F0F15] p-5 rounded-3xl border border-white/5 flex flex-col gap-4 flex-1 min-h-[300px]">
+                        <h3 className="text-sm font-bold tracking-tight text-white/80 border-b border-white/5 pb-2">
+                          💬 {t('reviews')} ({comments.length})
+                        </h3>
+
+                        {/* Comment Input */}
+                        <form onSubmit={handleAddComment} className="flex flex-col gap-2">
+                          <textarea
+                            value={newCommentText}
+                            onChange={(e) => setNewCommentText(e.target.value)}
+                            placeholder={t('addCommentPlaceholder')}
+                            rows={3}
+                            className="bg-black/40 border border-white/10 text-white placeholder-white/20 text-xs p-3 rounded-2xl resize-none focus:ring-1 focus:ring-[#00F2FF] focus:border-transparent outline-none"
+                          />
+                          <button
+                            type="submit"
+                            className="bg-gradient-to-r from-cyan-400 to-purple-500 text-black text-xs font-bold py-1.5 px-4 rounded-xl self-end hover:scale-105 active:scale-95 transition-all"
+                          >
+                            {t('addCommentBtn')}
+                          </button>
+                        </form>
+
+                        {/* Comment List items */}
+                        <div className="flex-1 overflow-y-auto max-h-[220px] flex flex-col gap-3 pr-1">
+                          {comments.map(c => (
+                            <div key={c.id} className="bg-white/5 p-3 rounded-2xl flex items-start gap-2.5 border border-white/5">
+                              <span className="text-lg flex-shrink-0">{c.userAvatar || '👶'}</span>
+                              <div className="flex-1">
+                                <span className="text-[10px] font-bold text-cyan-300 block">{c.userName}</span>
+                                <p className="text-xs text-white/80 mt-1">{c.text}</p>
+                                <span className="text-[8px] text-white/30 block mt-1.5">{new Date(c.timestamp).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                    </>
+                  )}
+
+                    </div>
+                  </motion.div>
+                )}</AnimatePresence>
+
+                {/* DYNAMIC LIST RAILS (Trending, Recommendation, Anime lists as requested) */}
+                <div className="flex flex-col gap-8">
+                  
+                  {/* SEARCH RESULTS FEED */}
+                  {searchQuery && (
+                    <div className="flex flex-col gap-4">
+                      {filteredVideos.length > 0 && (
+                        <div 
+                          className="w-full flex-none bg-gradient-to-r from-blue-900 to-purple-900 rounded-3xl overflow-hidden relative cursor-pointer group shadow-2xl mb-4 border border-white/10 hover:border-cyan-400 transition-all"
+                          onClick={() => {
+                            setActiveVideo(filteredVideos[0]);
+                            setActiveTab('theater');
+                            setSearchQuery('');
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}>
+                          <div className="absolute inset-0 z-0">
+                            <img src={filteredVideos[0].banner || filteredVideos[0].poster} alt="cover" className="w-full h-full object-cover opacity-60 mix-blend-overlay group-hover:scale-105 transition-transform duration-700" />
+                            <div className="absolute inset-0 bg-gradient-to-r from-black via-black/80 to-transparent" />
+                          </div>
+                          <div className="relative z-10 p-8 md:p-12 flex flex-col justify-end w-full md:w-2/3 h-full gap-4">
+                            <span className="bg-yellow-500 text-black px-3 py-1 rounded-full text-xs font-black uppercase inline-block max-w-max">Best Match</span>
+                            <h2 className="text-3xl md:text-5xl font-black text-white italic tracking-tighter leading-none shadow-black/50 drop-shadow-lg">
+                              {filteredVideos[0].title[lang] || filteredVideos[0].title.en}
+                            </h2>
+                            <p className="text-white/70 text-sm line-clamp-2 md:w-3/4">{filteredVideos[0].description[lang] || filteredVideos[0].description.en}</p>
+                            <div className="flex items-center gap-3 mt-2">
+                               <button className="bg-gradient-to-r from-[#00F2FF] to-[#009DFF] text-black rounded-full px-8 py-3 font-black uppercase tracking-wider text-xs flex items-center gap-2 hover:shadow-[0_0_20px_rgba(0,242,255,0.4)] transition-all">
+                                 <Play className="w-4 h-4 fill-current" />
+                                 {t('play')}
+                               </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <h3 className="text-xl font-bold tracking-tight italic text-cyan-400">
+                        {t('search')} {t('details')} for &quot;{searchQuery}&quot;
+                      </h3>
+                      {filteredVideos.length === 0 ? (
+                        <p className="text-sm text-white/40 bg-white/5 p-8 rounded-2xl text-center">
+                          No videos found matching your search. Try adjusting the tags or check spelling.
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6">
+                          {filteredVideos.map(vid => (
+                            <div
+                              key={vid.id}
+                              onClick={() => {
+                                setActiveVideo(vid);
+                                document.getElementById('video-arena')?.scrollIntoView({ behavior: 'smooth' });
+                              }}
+                              className="bg-[#1A1A2E]/50 rounded-2xl border border-white/5 overflow-hidden group cursor-pointer hover:border-[#00F2FF]/40 hover:-translate-y-1 transition-all duration-300"
+                            >
+                              <div className="aspect-[3/4] bg-black relative">
+                                <img src={vid.poster} alt={vid.title.en} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
+                                <span className="absolute top-2 left-2 bg-black/60 text-pink-400 text-[9px] px-1.5 py-0.5 rounded font-black uppercase">
+                                  {vid.ageCategory} yrs
+                                </span>
+                              </div>
+                              <div className="p-2.5">
+                                <p className="font-bold text-xs text-white line-clamp-1">{vid.title[lang] || vid.title.en}</p>
+                                <span className="text-[9px] text-white/40 block capitalize mt-0.5">{vid.type} • ⭐ {vid.rating}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* HOME SCREEN FEATURED HERO */}
+                  {!searchQuery && videos.length > 0 && (
+                     <div 
+                       className="w-full h-80 md:h-[450px] flex-none bg-gradient-to-r from-blue-900 to-purple-900 rounded-3xl overflow-hidden relative cursor-pointer group shadow-2xl mb-8 border border-white/5 hover:border-cyan-400 transition-all"
+                       onClick={() => {
+                         setActiveVideo(videos[0]);
+                         setActiveTab('theater');
+                         window.scrollTo({ top: 0, behavior: 'smooth' });
+                       }}>
+                       <div className="absolute inset-0 z-0">
+                         <img src={videos[0].banner || videos[0].poster} alt="cover" className="w-full h-full object-cover opacity-60 mix-blend-overlay group-hover:scale-105 transition-transform duration-700" />
+                         <div className="absolute inset-0 bg-gradient-to-r from-black via-black/60 to-transparent" />
+                         <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#050508] to-transparent" />
+                       </div>
+                       <div className="relative z-10 p-8 md:p-12 flex flex-col justify-end w-full md:w-2/3 h-full gap-4">
+                         <span className="bg-gradient-to-r from-pink-500 to-purple-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest inline-block max-w-max">New Alert</span>
+                         <h2 className="text-4xl md:text-6xl font-black text-white tracking-tighter leading-none shadow-black/50 drop-shadow-lg !m-0">
+                           {videos[0].title[lang] || videos[0].title.en}
+                         </h2>
+                         <p className="text-white/70 text-sm md:text-base line-clamp-2 md:w-3/4">{videos[0].description[lang] || videos[0].description.en}</p>
+                         <div className="flex items-center gap-3 mt-4">
+                            <button className="bg-white text-black rounded-full px-8 py-3.5 font-black uppercase tracking-widest text-xs flex items-center gap-2 hover:bg-cyan-300 hover:shadow-[0_0_20px_rgba(0,242,255,0.4)] transition-all">
+                              <Play className="w-5 h-5 fill-current" />
+                              {t('play')}
+                            </button>
+                            <button className="bg-white/10 backdrop-blur-md text-white border border-white/20 rounded-full px-8 py-3.5 font-black uppercase tracking-widest text-xs flex items-center gap-2 hover:bg-white/20 transition-all">
+                              <Info className="w-5 h-5" />
+                              Details
+                            </button>
+                         </div>
+                       </div>
+                     </div>
+                  )}
+
+                  {/* CONTINUE WATCHING RAIL with customized progress as requested */}
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between px-2">
+                      <h3 className="text-xl font-bold tracking-tight">
+                        {t('continueWatching')} <span className="text-[#00F2FF] italic">for {currentProfile?.name || 'Kid'}</span>
+                      </h3>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                      
+                      <div 
+                        onClick={() => {
+                          const vObj = videos.find(v => v.id === 'v1');
+                          if (vObj) {
+                            setActiveVideo(vObj);
+                            setVideoProgress(35);
+                            setIsPlaying(true);
+                          }
+                        }}
+                        className="flex-none flex flex-col gap-3 group cursor-pointer bg-white/[0.02] border border-white/5 rounded-3xl p-2.5 hover:border-cyan-400/40 transition-all"
+                      >
+                        <div className="h-[140px] bg-[#1A1A2E] rounded-[24px] border border-white/10 relative overflow-hidden bg-gradient-to-br from-blue-900/50 to-purple-900/50">
+                          <img src="https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=400" className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-500" alt="Space Bunny" />
+                          <div className="absolute inset-0 bg-black/20" />
+                          <div className="absolute bottom-0 left-0 h-1 bg-[#00F2FF]" style={{ width: '35%' }} />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="w-10 h-10 bg-[#00F2FF] text-black rounded-full flex items-center justify-center">
+                              <Play className="w-4 h-4 fill-current ml-0.5" />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="px-1">
+                          <p className="font-extrabold text-sm leading-tight text-white group-hover:text-cyan-300">Space Bunny Adventures</p>
+                          <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mt-0.5">S1 • E01 • 8m left</p>
+                        </div>
+                      </div>
+
+                      <div 
+                        onClick={() => {
+                          const vObj = videos.find(v => v.id === 'v2');
+                          if (vObj) {
+                            setActiveVideo(vObj);
+                            setVideoProgress(75);
+                            setIsPlaying(true);
+                          }
+                        }}
+                        className="flex-none flex flex-col gap-3 group cursor-pointer bg-white/[0.02] border border-white/5 rounded-3xl p-2.5 hover:border-cyan-400/40 transition-all"
+                      >
+                        <div className="h-[140px] bg-[#1A1A2E] rounded-[24px] border border-white/10 relative overflow-hidden bg-gradient-to-br from-emerald-900/40 to-cyan-900/40">
+                          <img src="https://images.unsplash.com/photo-1448375240586-882707db888b?q=80&w=400" className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-500" alt="Owl Teacher" />
+                          <div className="absolute inset-0 bg-black/20" />
+                          <div className="absolute bottom-0 left-0 h-1 bg-[#00F2FF]" style={{ width: '75%' }} />
+                        </div>
+                        <div className="px-1">
+                          <p className="font-extrabold text-sm leading-tight text-white group-hover:text-cyan-300">The Wise Owl Teacher</p>
+                          <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mt-0.5">Special E01 • 4m left</p>
+                        </div>
+                      </div>
+
+                      <div 
+                        onClick={() => {
+                          const vObj = videos.find(v => v.id === 'v5');
+                          if (vObj) {
+                            setActiveVideo(vObj);
+                            setVideoProgress(15);
+                            setIsPlaying(true);
+                          }
+                        }}
+                        className="flex-none flex flex-col gap-3 group cursor-pointer bg-white/[0.02] border border-white/5 rounded-3xl p-2.5 hover:border-cyan-400/40 transition-all"
+                      >
+                        <div className="h-[140px] bg-[#1A1A2E] rounded-[24px] border border-white/10 relative overflow-hidden bg-gradient-to-br from-red-900/40 to-yellow-900/40">
+                          <img src="https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=400" className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-500" alt="Chibi Ninja" />
+                          <div className="absolute inset-0 bg-black/20" />
+                          <div className="absolute bottom-0 left-0 h-1 bg-[#00F2FF]" style={{ width: '15%' }} />
+                        </div>
+                        <div className="px-1">
+                          <p className="font-extrabold text-sm leading-tight text-white group-hover:text-cyan-300">Chibi Ninja Academy</p>
+                          <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mt-0.5">S1 • E03 • 14m left</p>
+                        </div>
+                      </div>
+
+                      <div className="flex-none flex flex-col gap-3 opacity-40 bg-white/[0.01] border border-dashed border-white/10 rounded-3xl p-5 items-center justify-center">
+                        <Watch className="w-8 h-8 text-white/20" />
+                        <span className="text-[10px] uppercase tracking-widest text-center font-bold">More history locked with PIN settings</span>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* SMART CAROUSEL - "BECAUSE YOU WATCHED" DYNAMIC MATCHES */}
+                  {currentProfile && (
+                    (() => {
+                      const recommendations = getSmartRecommendations();
+                      if (recommendations.length === 0) return null;
+
+                      const becauseYouWatchedHeader = {
+                        ar: "لأنك شاهدت",
+                        en: "Because You Watched",
+                        fr: "Parce que tu as regardé",
+                        de: "Weil du geschaut hast",
+                        es: "Porque viste",
+                        it: "Perché hai guardato"
+                      }[lang] || "Because You Watched";
+
+                      const influencedByLabel = {
+                        ar: "اقتراحات ذكية مخصصة لك بناءً على تاريخ مشاهدتك كبطل! 🤖✨",
+                        en: "Smart recommendations curated just for you based on your recent activity! 🤖✨",
+                        fr: "Des recommandations intelligentes sélectionnées juste pour toi sur la base de tes activités ! 🤖✨",
+                        de: "Kreative Empfehlungen, die perfekt zu deinen Lieblingssendungen passen! 🤖✨",
+                        es: "¡Recomendaciones de Beep-Boop preparadas especialmente para ti! 🤖✨",
+                        it: "Consigli intelligenti preparati apposta per te in base alle tue preferenze! 🤖✨"
+                      }[lang] || "Smart recommendations curated just for you based on your recent activity! 🤖✨";
+
+                      return (
+                        <div className="flex flex-col gap-4 bg-gradient-to-r from-purple-950/20 via-[#100F22]/40 to-cyan-950/20 p-6 rounded-[35px] border border-cyan-500/25 shadow-xl relative overflow-hidden group/carousel">
+                          {/* Ambient glow effects */}
+                          <div className="absolute top-0 right-1/4 w-32 h-32 bg-[#00F2FF]/5 rounded-full blur-2xl pointer-events-none" />
+                          <div className="absolute bottom-0 left-1/4 w-32 h-32 bg-purple-500/5 rounded-full blur-2xl pointer-events-none" />
+
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-2 z-10">
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2">
+                                <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
+                                <h3 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                                  <span>{becauseYouWatchedHeader}</span>
+                                </h3>
+                              </div>
+                              <p className="text-[11px] text-white/60">
+                                {influencedByLabel}
+                              </p>
+                            </div>
+
+                            {/* Sliding buttons */}
+                            <div className="flex items-center gap-2 self-end sm:self-auto">
+                              <button
+                                onClick={() => scrollCarousel('left')}
+                                className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all text-white/70 hover:text-white"
+                                title="Scroll Left"
+                              >
+                                <ChevronLeft className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => scrollCarousel('right')}
+                                className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all text-white/70 hover:text-white"
+                                title="Scroll Right"
+                              >
+                                <ChevronRight className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Horizontal scroll queue */}
+                          <div 
+                            ref={carouselRef}
+                            className="flex gap-6 overflow-x-auto pb-4 pr-1 scrollbar-hide scroll-smooth snap-x snap-mandatory z-10"
+                          >
+                            {recommendations.map(({ video, originalWatched }) => (
+                              <div
+                                key={video.id}
+                                onClick={() => {
+                                  setActiveVideo(video);
+                                  document.getElementById('video-arena')?.scrollIntoView({ behavior: 'smooth' });
+                                }}
+                                className="flex-none w-[170px] sm:w-[200px] bg-[#121223]/95 rounded-3xl border border-white/5 overflow-hidden group cursor-pointer hover:border-cyan-400/40 hover:-translate-y-1.5 transition-all duration-300 snap-start shadow-md shadow-black/30"
+                              >
+                                <div className="aspect-[3/4] bg-black relative">
+                                  <img 
+                                    src={video.poster} 
+                                    alt={video.title[lang] || video.title.en} 
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-[#0A0A14] via-transparent to-transparent opacity-90" />
+                                  
+                                  <span className="absolute top-2.5 left-2.5 bg-black/60 text-[#00F2FF] text-[9px] px-2 py-0.5 rounded-full font-black uppercase">
+                                    {video.ageCategory} yrs
+                                  </span>
+
+                                  {/* Hover Play HUD */}
+                                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                    <div className="w-10 h-10 bg-gradient-to-tr from-[#00F2FF] to-[#7928CA] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-cyan-400/20">
+                                      <Play className="w-4 h-4 fill-current ml-0.5" />
+                                    </div>
+                                  </div>
+
+                                  <div className="absolute bottom-2 left-2 right-2 text-center">
+                                    <span className="text-[8px] bg-white/10 backdrop-blur-md text-white/90 border border-white/10 px-2 py-0.5 rounded uppercase font-bold tracking-wider">
+                                      {video.type}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="p-3 select-none">
+                                  <p className="font-extrabold text-xs text-white line-clamp-1 group-hover:text-[#00F2FF] transition-colors">
+                                    {video.title[lang] || video.title.en}
+                                  </p>
+                                  
+                                  {/* Multilingual recommendation tag badge */}
+                                  <div className="mt-2 flex items-center gap-1 bg-cyan-400/10 text-[9px] text-cyan-300 font-bold py-0.5 px-2 rounded-lg border border-cyan-400/20 line-clamp-1 shrink-0 truncate">
+                                    <span className="w-1 h-1 rounded-full bg-cyan-400 shrink-0" />
+                                    <span className="truncate">
+                                      {lang === 'ar' ? 'تشابه مع: ' : 'Inspired by: '}{originalWatched.title[lang] || originalWatched.title.en}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
+
+                  {/* CARTOONS & ANIME SHOWCASE SHELF */}
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between px-2">
+                      <h3 className="text-xl font-bold tracking-tight italic text-rose-400">
+                        {t('trending')} - {t('brandName')} Premium
+                      </h3>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6">
+                      {videos.slice(0, 6).map(vid => (
+                        <div
+                          key={vid.id}
+                          onClick={() => {
+                            setActiveVideo(vid);
+                            document.getElementById('video-arena')?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className={`bg-[#1A1A2E]/50 rounded-3xl border overflow-hidden group cursor-pointer hover:-translate-y-2 transition-all duration-500 ${
+                            activeVideo?.id === vid.id ? 'border-[#00F2FF] ring-2 ring-[#00F2FF]/20' : 'border-white/5 hover:border-[#00F2FF]/30'
+                          }`}
+                        >
+                          <div className="aspect-[3/4] bg-black relative">
+                            <img src={vid.poster} alt={vid.title.en} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-90" />
+                            
+                            <span className="absolute top-3 left-3 bg-[#FF0080] text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest">
+                              {vid.ageCategory} yrs
+                            </span>
+
+                            <div className="absolute bottom-3 left-3 right-3 text-center z-10">
+                              <span className="text-[8px] bg-cyan-400/20 text-[#00F2FF] font-black border border-cyan-400/40 px-2 py-0.5 rounded uppercase">
+                                {vid.type}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="p-3">
+                            <p className="font-extrabold text-xs text-white line-clamp-1 text-center group-hover:text-[#00F2FF] transition-colors">{vid.title[lang] || vid.title.en}</p>
+                            <p className="text-[10px] text-white/40 text-center mt-1">⭐ {vid.rating} • {vid.releaseYear}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+              </>
+            )}
+
+            {/* 2. FAMILY SUBSCRIPTION PRICING CARDS */}
+            {activeTab === 'subscriptions' && (
+              <div className="max-w-4xl mx-auto py-8 flex flex-col gap-8 animate-fade-in text-center">
+                <div className="flex flex-col gap-3">
+                  <h1 className="text-4xl font-black italic uppercase text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-cyan-400">
+                    {t('pricingTitle')}
+                  </h1>
+                  <p className="text-white/60 text-sm max-w-xl mx-auto">
+                    Enjoy completely safe, curated, non-violent animations & interactive edutainment suited perfectly for growing minds.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-4 text-left">
+                  
+                  {/* Free tier */}
+                  <div className="bg-[#101017] p-6 rounded-[30px] border border-white/5 flex flex-col justify-between hover:border-white/20 transition-all">
+                    <div>
+                      <h3 className="text-xl font-bold uppercase text-white/50">{t('freePlan')}</h3>
+                      <div className="my-4">
+                        <span className="text-3xl font-black">$0</span>
+                        <span className="text-xs text-white/40"> / Month</span>
+                      </div>
+                      <p className="text-xs text-white/70 leading-relaxed mb-6">
+                        {t('featuresFree')}
+                      </p>
+                    </div>
+                    <button className="bg-white/10 hover:bg-white/20 text-white text-xs font-bold py-3 px-4 rounded-xl text-center w-full transition-all">
+                      {t('currentPlan')}
+                    </button>
+                  </div>
+
+                  {/* Premium Tier with Neon dynamic borders */}
+                  <div className="bg-[#121225] p-6 rounded-[32px] border-2 border-cyan-400 relative flex flex-col justify-between shadow-xl shadow-cyan-400/5">
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-cyan-400 text-black text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-wider">
+                      Most Active Parent Pick
+                    </span>
+                    <div>
+                      <h3 className="text-xl font-bold uppercase text-[#00F2FF]">{t('premiumPlan')}</h3>
+                      <div className="my-4">
+                        <span className="text-4xl font-black text-white">$4.99</span>
+                        <span className="text-xs text-white/40"> / Month</span>
+                      </div>
+                      <p className="text-xs text-cyan-100 leading-relaxed mb-6">
+                        {t('featuresPremium')}
+                      </p>
+                    </div>
+                    <button className="bg-[#00F2FF] hover:bg-cyan-300 text-black text-xs font-black py-3 px-4 rounded-xl text-center w-full transition-all shadow-md shadow-cyan-400/20">
+                      {t('subscribeNow')}
+                    </button>
+                  </div>
+
+                  {/* Family Tier */}
+                  <div className="bg-[#101017] p-6 rounded-[30px] border border-white/5 flex flex-col justify-between hover:border-white/20 transition-all">
+                    <div>
+                      <h3 className="text-xl font-bold uppercase text-purple-400">{t('familyPlan')}</h3>
+                      <div className="my-4">
+                        <span className="text-3xl font-black">$7.99</span>
+                        <span className="text-xs text-white/40"> / Month</span>
+                      </div>
+                      <p className="text-xs text-white/70 leading-relaxed mb-6">
+                        Up to 6 Kids profiles - custom locks - downloaded content does not expire - access via Android/SmartTV app keys.
+                      </p>
+                    </div>
+                    <button className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold py-3 px-4 rounded-xl text-center w-full transition-all">
+                      {t('subscribeNow')}
+                    </button>
+                  </div>
+
+                </div>
+              </div>
+            )}
+
+            {/* 4. DOWNLOADS / OFFLINE BACKPACK DASHBOARD PAGE */}
+            {activeTab === 'downloads' && (
+              <div className="max-w-6xl mx-auto py-2 flex flex-col gap-8 animate-fade-in relative z-15">
+                
+                {/* Custom Playful Kids Banner */}
+                <div className="relative overflow-hidden rounded-[36px] bg-gradient-to-r from-purple-900/40 via-purple-950/20 to-pink-950/20 p-8 border border-white/5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  {/* Decorative glowing dots in background */}
+                  <div className="absolute -top-10 -left-10 w-40 h-40 bg-pink-500/10 rounded-full blur-2xl pointer-events-none" />
+                  <div className="absolute -bottom-10 right-10 w-32 h-32 bg-[#00F2FF]/10 rounded-full blur-2xl pointer-events-none" />
+                  
+                  <div className="flex flex-col gap-2 z-10 text-left max-w-xl">
+                    <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white flex items-center gap-2">
+                      <span>{lang === 'ar' ? 'حقيبة التنزيلات بدون اتصال 🎒🗺️' : 'My Offline Backpack 🎒🗺️'}</span>
+                    </h1>
+                    <p className="text-xs text-white/60 leading-relaxed font-medium">
+                      {lang === 'ar' 
+                        ? 'شاهد أفلامك وحلقاتك المفضلة في أي مكان، حتى في السيارة أو الطائرة! املأ حقيبتك لتبدأ الرحلة العجيبة! ✈️🚗' 
+                        : 'Watch your favorite movies & episodes anywhere, even in the car or on a plane! Fill your backpack and embark on cosmic journeys! ✈️🚗'}
+                    </p>
+                  </div>
+
+                  {currentProfile?.downloads && currentProfile.downloads.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const isConfirmed = window.confirm(
+                          lang === 'ar' 
+                            ? 'هل تريد تفريغ كل التنزيلات؟ ستفقد القدرة على مشاهدتها بدون إنترنت!' 
+                            : 'Are you sure you want to delete all offline files? You won\'t be able to view them without connection!'
+                        );
+                        if (isConfirmed) {
+                          handleClearAllDownloads();
+                        }
+                      }}
+                      className="px-5 py-3 rounded-2xl bg-red-600/20 border border-red-500/30 hover:bg-red-600/30 text-red-200 text-xs font-black tracking-wider flex items-center gap-2 transition-all self-start md:self-auto shadow-lg shadow-red-950/20 active:scale-95 shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4 text-red-400" />
+                      <span>{lang === 'ar' ? 'تفريغ الحقيبة بالكامل 🧹' : 'Empty Whole Backpack 🧹'}</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Storage usage panel withSegmented progress bar */}
+                {(() => {
+                  const downloadsList = currentProfile?.downloads || [];
+                  const totalCapacityMb = 64 * 1024; // 64 GB
+                  const otherCapacityMb = 24.5 * 1024; // 24.5 GB
+                  const kidsStreamMb = downloadsList.reduce((acc, item) => acc + (item.sizeMb || 45), 0);
+                  const freeCapacityMb = Math.max(0, totalCapacityMb - otherCapacityMb - kidsStreamMb);
+
+                  // Percentages for bar
+                  const kidsPercent = (kidsStreamMb / totalCapacityMb) * 100;
+                  const otherPercent = (otherCapacityMb / totalCapacityMb) * 100;
+                  const freePercent = Math.max(0, 100 - kidsPercent - otherPercent);
+
+                  const kidsGb = (kidsStreamMb / 1024).toFixed(2);
+                  const otherGb = (otherCapacityMb / 1024).toFixed(2);
+                  const freeGb = (freeCapacityMb / 1024).toFixed(2);
+
+                  return (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      
+                      {/* Left Sidebar: STORAGE STATUS PANEL */}
+                      <div className="bg-[#0F0F15]/90 border border-white/5 rounded-[32px] p-6 lg:col-span-1 flex flex-col gap-6 relative overflow-hidden backdrop-blur-md">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-2xl pointer-events-none" />
+                        
+                        <div className="flex flex-col gap-1 text-left select-none">
+                          <h3 className="text-xs font-black tracking-widest text-[#00F2FF] uppercase">{lang === 'ar' ? 'مساحة تخزين الجهاز 📱💾' : 'Device Storage Breakdown 📱💾'}</h3>
+                          <span className="text-[10px] text-white/40 font-semibold">{lang === 'ar' ? 'إجمالي سعة تخزين التابلت / الآيباد' : 'Tablet / iPad total capacity'}: 64.00 GB</span>
+                        </div>
+
+                        {/* Visual segmented bar matching elegant-scandic/vibrant design */}
+                        <div className="flex flex-col gap-2">
+                          <div className="w-full h-4 bg-white/5 rounded-full overflow-hidden flex border border-white/10 p-[1px]">
+                            {/* Kids Stream Downloads */}
+                            {kidsStreamMb > 0 && (
+                              <div 
+                                className="h-full bg-gradient-to-r from-[#FF0080] to-purple-500 rounded-l-full transition-all duration-300"
+                                style={{ width: `${kidsPercent}%` }}
+                                title={`Kids Stream: ${kidsGb} GB`}
+                              />
+                            )}
+                            {/* Other apps and system files */}
+                            <div 
+                              className="h-full bg-[#1F1F2E] transition-all duration-300"
+                              style={{ 
+                                width: `${otherPercent}%`,
+                                borderTopLeftRadius: kidsStreamMb === 0 ? '9999px' : '0px',
+                                borderBottomLeftRadius: kidsStreamMb === 0 ? '9999px' : '0px'
+                              }}
+                              title={`Other Files: ${otherGb} GB`}
+                            />
+                            {/* Free space */}
+                            <div 
+                              className="h-full bg-gradient-to-r from-emerald-600 to-teal-500 rounded-r-full transition-all duration-300 flex-1"
+                              style={{ width: `${freePercent}%` }}
+                              title={`Free Space: ${freeGb} GB`}
+                            />
+                          </div>
+
+                          <span className="text-[9px] text-white/30 text-center uppercase font-bold tracking-wider">
+                            {lang === 'ar' ? 'مساحة الذاكرة النشطة بالوحدة النيجية' : 'Interactive Device Storage Scale'}
+                          </span>
+                        </div>
+
+                        {/* Segment breakdown cards */}
+                        <div className="flex flex-col gap-3 text-left text-xs">
+                          {/* Segment: Kids Stream */}
+                          <div className="flex items-center justify-between p-3 bg-[#1A1A2E]/50 rounded-2xl border border-pink-500/10">
+                            <div className="flex items-center gap-2.5">
+                              <span className="w-3 h-3 rounded-md bg-[#FF0080]" />
+                              <div>
+                                <p className="font-extrabold text-white">{lang === 'ar' ? 'مستخدم بواسطة التطبيق' : 'Used by Kids Stream'}</p>
+                                <p className="text-[10px] text-white/40">{lang === 'ar' ? 'مغامراتك المنزلة' : 'Your downloaded contents'}</p>
+                              </div>
+                            </div>
+                            <span className="font-black text-[#FF0080]">{kidsGb} GB</span>
+                          </div>
+
+                          {/* Segment: Other Files */}
+                          <div className="flex items-center justify-between p-3 bg-white/5 rounded-2xl border border-white/5 opacity-80">
+                            <div className="flex items-center gap-2.5">
+                              <span className="w-3 h-3 rounded-md bg-[#1F1F2E]" />
+                              <div>
+                                <p className="font-extrabold text-white/80">{lang === 'ar' ? 'الملفات الأخرى ونظام التشغيل' : 'Other Apps & System'}</p>
+                                <p className="text-[10px] text-white/40">{lang === 'ar' ? 'الألعاب والصور والملفات' : 'Games, photos & iOS/Android'}</p>
+                              </div>
+                            </div>
+                            <span className="font-bold text-white/70">{otherGb} GB</span>
+                          </div>
+
+                          {/* Segment: Free Space */}
+                          <div className="flex items-center justify-between p-3 bg-emerald-900/10 rounded-2xl border border-emerald-500/10">
+                            <div className="flex items-center gap-2.5">
+                              <span className="w-3 h-3 rounded-md bg-emerald-500" />
+                              <div>
+                                <p className="font-extrabold text-white">{lang === 'ar' ? 'المساحة المتبقية للجهاز' : 'Free Space Available'}</p>
+                                <p className="text-[10px] text-white/40">{lang === 'ar' ? 'جاهزة للمزيد من المغامرات!' : 'Ready for more downloads!'}</p>
+                              </div>
+                            </div>
+                            <span className="font-black text-emerald-400">{freeGb} GB</span>
+                          </div>
+                        </div>
+
+                        {/* Cute kid badge illustration container */}
+                        <div className="mt-auto bg-gradient-to-r from-[#FF0080]/10 to-[#00F2FF]/10 p-4 rounded-3xl border border-white/5 text-center flex flex-col items-center gap-2">
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center text-lg shadow-md select-none animate-bounce">
+                            🏆
+                          </div>
+                          <span className="text-[10px] font-black text-amber-200">
+                            {lang === 'ar' ? 'أنت مستكشف ممتاز للمشاهدة بدون إنترنت!' : 'You are an awesome Explorer!'}
+                          </span>
+                          <span className="text-[8px] text-white/40 max-w-[180px]">
+                            {lang === 'ar' 
+                              ? 'حمّل برامجك والعب بها مباشرة في السيارة أو المعسكر دون الحاجة لباقة البيانات!' 
+                              : 'Load up your backpack and play video cartridges anywhere, anytime without mobile data costs!'}
+                          </span>
+                        </div>
+
+                      </div>
+
+                      {/* Right Section: DOWNLOADS LIST */}
+                      <div className="lg:col-span-2 flex flex-col gap-4">
+                        
+                        {downloadsList.length === 0 ? (
+                          <div className="h-full min-h-[320px] bg-[#0F0F15]/90 border border-white/5 rounded-[32px] p-8 flex flex-col items-center justify-center gap-4 text-center z-10 backdrop-blur-md">
+                            <div className="w-16 h-16 rounded-3xl bg-[#FF0080]/10 border border-[#FF0080]/20 flex items-center justify-center text-3xl">
+                              🎒
+                            </div>
+                            <div className="flex flex-col gap-1 max-w-sm">
+                              <h4 className="font-black text-white text-md">
+                                {lang === 'ar' ? 'الحقيبة فارغة تماماً!' : 'Your Offline Backpack is Empty!'}
+                              </h4>
+                              <p className="text-xs text-white/50 leading-relaxed">
+                                {lang === 'ar' 
+                                  ? 'اذهب إلى أي فيلم أو حلقة واضغط على "تنزيل" لتعبئتها مغامرات رائعة! 💫🍿' 
+                                  : 'Go to any movie or series and click "Offline Download" to pack cartoon episodes inside your traveling bag! 💫🍿'}
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {downloadsList.map((item) => (
+                              <div
+                                key={item.id}
+                                className="bg-[#0F0F15]/80 hover:bg-[#0F0F15]/95 border border-white/5 rounded-3xl overflow-hidden p-3 flex gap-4 transition-all hover:border-[#FF0080]/20 hover:-translate-y-1 duration-300"
+                              >
+                                {/* Left Mini cartoon cartridge poster representation */}
+                                <div className="w-24 h-32 flex-shrink-0 relative rounded-2xl overflow-hidden group/item shadow-lg">
+                                  <img 
+                                    src={item.poster} 
+                                    alt={item.title} 
+                                    className="w-full h-full object-cover group-hover/item:scale-105 transition-transform duration-500 pointer-events-none" 
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+                                  
+                                  <span className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md border border-white/10 text-[8px] font-mono text-[#00F2FF] font-bold px-1.5 py-0.5 rounded">
+                                    {item.sizeMb || 45} MB
+                                  </span>
+
+                                  {/* Cute category tag badge top */}
+                                  <span className="absolute top-2 left-2 bg-[#FF0080] text-white text-[7px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                    {item.type}
+                                  </span>
+                                </div>
+
+                                {/* Right details description block */}
+                                <div className="flex-1 flex flex-col justify-between py-1 text-left min-w-0">
+                                  <div className="flex flex-col gap-1.5 min-w-0">
+                                    <p className="font-extrabold text-white text-xs line-clamp-2 leading-snug">
+                                      {item.title}
+                                    </p>
+                                    <div className="flex items-center gap-1.5 text-[9px] text-white/40">
+                                      <Watch className="w-2.5 h-2.5 shrink-0 text-cyan-400" />
+                                      <span className="truncate">
+                                        {lang === 'ar' ? 'فصل في الحقيبة منذ' : 'Packed on'}: {new Date(item.downloadedAt).toLocaleDateString(lang, {month: 'short', day: 'numeric'})}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Interaction buttons bar */}
+                                  <div className="flex items-center gap-2 pt-2">
+                                    {/* Play now button directly within active state */}
+                                    <button
+                                      onClick={() => handlePlayDownloadedItem(item)}
+                                      className="flex-1 px-3 py-2 rounded-xl bg-[#00F2FF]/20 hover:bg-[#00F2FF]/30 border border-[#00F2FF]/40 text-[#00F2FF] text-[10px] font-black flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95 shrink-0"
+                                    >
+                                      <Play className="w-3.5 h-3.5 fill-current text-[#00F2FF]" />
+                                      <span>{lang === 'ar' ? 'تشغيل أوفلاين 🚀' : 'Play Offline 🚀'}</span>
+                                    </button>
+
+                                    {/* Trash icon representing Unpack delete option */}
+                                    <button
+                                      onClick={() => handleRemoveDownload(item.id)}
+                                      className="p-2 rounded-xl bg-white/5 hover:bg-red-950/20 hover:text-red-400 border border-white/10 hover:border-red-500/30 text-white/50 transition-all active:scale-95 flex items-center justify-center"
+                                      title={lang === 'ar' ? 'إزالة من الحقيبة 🗑️' : 'Unpack Item 🗑️'}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                      </div>
+
+                    </div>
+                  );
+                })()}
+
+              </div>
+            )}
+
+            {/* 3. SECURE PARENTAL SETTINGS PORTAL (PIN protected Area) */}
+            {activeTab === 'parent-portal' && isParentAuthorized && (
+              <div className="max-w-5xl mx-auto py-6 flex flex-col gap-8 animate-fade-in">
+                
+                {/* Header overview banner for settings */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-red-600/20 via-[#0F0F15] to-cyan-950/20 p-6 rounded-3xl border border-red-500/20">
+                  <div className="flex items-center gap-3">
+                    <Shield className="w-10 h-10 text-amber-400 fill-current" />
+                    <div>
+                      <h2 className="text-2xl font-black tracking-tight text-white">{t('parentsMode')}</h2>
+                      <p className="text-xs text-white/60">Configure local child catalog, review activities, test PostgreSQL structure models, and handle ads.</p>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => {
+                      setIsParentAuthorized(false);
+                      setActiveTab('home');
+                    }}
+                    className="bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-bold py-2 px-4 rounded-xl flex items-center gap-2"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-red-400" />
+                    <span>Exit Parents Portal</span>
+                  </button>
+                </div>
+
+                {/* Subsections Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  
+                  {/* Left Controls column */}
+                  <div className="lg:col-span-7 flex flex-col gap-6">
+                    
+                    {/* Add content catalog Form */}
+                    <div className="bg-[#0F0F15] p-6 rounded-3xl border border-white/5 flex flex-col gap-4">
+                      <h3 className="text-md font-bold text-[#00F2FF] flex items-center gap-2">
+                        <Plus className="w-4 h-4" />
+                        {t('addMovieBtn')} (Admin CMS)
+                      </h3>
+
+                      <form onSubmit={handleAddVideoSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1.5 col-span-2 md:col-span-1">
+                          <label className="text-[10px] text-white/50 uppercase font-black">Title (ARABIC)</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="مثال: مغامرات ميكي ماوس في الغابة السحرية"
+                            value={newVideoTitleAr}
+                            onChange={(e) => setNewVideoTitleAr(e.target.value)}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl outline-none"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1.5 col-span-2 md:col-span-1">
+                          <label className="text-[10px] text-white/50 uppercase font-black">Title (ENGLISH)</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g., Mickey Magic Forest Expedition"
+                            value={newVideoTitleEn}
+                            onChange={(e) => setNewVideoTitleEn(e.target.value)}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl outline-none"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1.5 col-span-2">
+                          <label className="text-[10px] text-white/50 uppercase font-black">Description (ARABIC)</label>
+                          <textarea
+                            placeholder="اكتب وصفاً لطيفاً ومحفزاً للطفل..."
+                            value={newVideoDescAr}
+                            onChange={(e) => setNewVideoDescAr(e.target.value)}
+                            rows={2}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl resize-none outline-none"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1.5 col-span-2">
+                          <label className="text-[10px] text-white/50 uppercase font-black">Description (ENGLISH)</label>
+                          <textarea
+                            placeholder="Write an encouraging kid-friendly description description..."
+                            value={newVideoDescEn}
+                            onChange={(e) => setNewVideoDescEn(e.target.value)}
+                            rows={2}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl resize-none outline-none"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] text-white/50 uppercase font-black">Type</label>
+                          <select
+                            value={newVideoType}
+                            onChange={(e) => setNewVideoType(e.target.value as any)}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl"
+                          >
+                            <option value="movie">Movie 🎬</option>
+                            <option value="series">Cartoon Series 📺</option>
+                            <option value="anime">Anime ⭐</option>
+                            <option value="educational">Learning Program 🎓</option>
+                          </select>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] text-white/50 uppercase font-black">Age Target</label>
+                          <select
+                            value={newVideoAge}
+                            onChange={(e) => setNewVideoAge(e.target.value as any)}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl"
+                          >
+                            <option value="all">All ages (العائلة)</option>
+                            <option value="3-5">Toddlers (3-5 years)</option>
+                            <option value="6-8">Kids (6-8 years)</option>
+                            <option value="9-12">Pre-Teen (9-12 years)</option>
+                          </select>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] text-white/50 uppercase font-black">Poster Unsplash URL</label>
+                          <input
+                            type="text"
+                            placeholder="https://images.unsplash.com/photo-..."
+                            value={newVideoPoster}
+                            onChange={(e) => setNewVideoPoster(e.target.value)}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl outline-none"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] text-white/50 uppercase font-black">Banner Unsplash URL</label>
+                          <input
+                            type="text"
+                            placeholder="https://images.unsplash.com/photo-..."
+                            value={newVideoBanner}
+                            onChange={(e) => setNewVideoBanner(e.target.value)}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl outline-none"
+                          />
+                        </div>
+
+                        <div className="col-span-2 flex justify-end">
+                          <button
+                            type="submit"
+                            className="bg-gradient-to-r from-emerald-500 to-cyan-400 text-black font-black text-xs py-2.5 px-6 rounded-xl hover:scale-105 active:scale-95 transition-all"
+                          >
+                            Save Showcase Item 🌟
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+
+                    {/* Add Episode Form */}
+                    <div className="bg-[#0F0F15] p-6 rounded-3xl border border-white/5 flex flex-col gap-4">
+                      <h3 className="text-md font-bold text-pink-400 flex items-center gap-2">
+                        <Plus className="w-4 h-4" />
+                        {t('addEpisodeBtn')} (Video Sources)
+                      </h3>
+
+                      <form onSubmit={handleAddEpisodeSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1.5 col-span-2">
+                          <label className="text-[10px] text-white/50 uppercase font-black font-mono">Assign to Series / Video Parent</label>
+                          <select
+                            value={newEpSeriesId}
+                            onChange={(e) => setNewEpSeriesId(e.target.value)}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl cursor-pointer"
+                          >
+                            {videos.map(v => (
+                              <option key={v.id} value={v.id}>
+                                {v.title.en} ({v.type})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] text-white/50 uppercase font-black">Episode Number</label>
+                          <input
+                            type="number"
+                            required
+                            value={newEpNum}
+                            onChange={(e) => setNewEpNum(Number(e.target.value))}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl outline-none"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] text-white/50 uppercase font-black">Video Stream Link (MP4/HLS)</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="BigBuckBunny or similar safe mp4 link"
+                            value={newEpUrl}
+                            onChange={(e) => setNewEpUrl(e.target.value)}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] text-white/50 uppercase font-black">Title (ARABIC)</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="الحلقة الممتعة للتعلم"
+                            value={newEpTitleAr}
+                            onChange={(e) => setNewEpTitleAr(e.target.value)}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl outline-none"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] text-white/50 uppercase font-black">Title (ENGLISH)</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Episode En title"
+                            value={newEpTitleEn}
+                            onChange={(e) => setNewEpTitleEn(e.target.value)}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl outline-none"
+                          />
+                        </div>
+
+                        <div className="col-span-2 flex justify-end">
+                          <button
+                            type="submit"
+                            className="bg-gradient-to-r from-pink-500 to-purple-500 text-white font-black text-xs py-2.5 px-6 rounded-xl hover:scale-105 active:scale-95 transition-all"
+                          >
+                            Save Episode Link
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+
+                    {/* RELATIONAL DATABASE SCHEMA DOCUMENTATION SYSTEM (🐘 PostgreSQL tabs) */}
+                    <div className="bg-[#0F0F15] p-6 rounded-3xl border border-white/5 flex flex-col gap-4 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/10 rounded-full blur-xl pointer-events-none" />
+                      <h3 className="text-md font-bold text-purple-300 flex items-center gap-2">
+                        <Database className="w-4 h-4 text-purple-400" />
+                        {t('dbSchemaDoc')}
+                      </h3>
+                      <p className="text-[11px] text-white/50">
+                        Explore our enterprise relational design. In production, these tables run fully typed with optimized indexing and constraints inside GCP PostgreSQL.
+                      </p>
+
+                      <div className="flex gap-2 overflow-x-auto pb-2 border-b border-white/5">
+                        {["movies", "episodes", "users_profiles", "sub_payments", "logs_analytics"].map(tab => (
+                          <button
+                            key={tab}
+                            onClick={() => setActiveSchemaTab(tab)}
+                            className={`text-[10px] px-3 py-1.5 rounded-xl font-bold uppercase tracking-wider transition-all whitespace-nowrap ${
+                              activeSchemaTab === tab ? 'bg-purple-600 text-white' : 'bg-white/5 hover:bg-white/10 text-white/50'
+                            }`}
+                          >
+                            {tab.replace('_', ' ')}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Schema Tab details */}
+                      <div className="bg-black/40 p-3.5 rounded-2xl border border-white/5 text-[11px] font-mono leading-relaxed max-h-[250px] overflow-y-auto">
+                        {activeSchemaTab === 'movies' && (
+                          <pre className="text-pink-300 whitespace-pre-wrap">
+{`CREATE TABLE Movies (
+  id VARCHAR(64) PRIMARY KEY,
+  type VARCHAR(20) CHECK (type IN ('movie', 'series', 'anime', 'educational')),
+  title_ar VARCHAR(255) NOT NULL,
+  title_en VARCHAR(255) NOT NULL,
+  description_ar TEXT,
+  description_en TEXT,
+  poster VARCHAR(512),
+  banner VARCHAR(512),
+  age_category VARCHAR(10) CHECK (age_category IN ('all', '3-5', '6-8', '9-12')),
+  duration VARCHAR(20),
+  rating DECIMAL(3, 2) DEFAULT 5.0,
+  release_year INT DEFAULT 2026,
+  views INT DEFAULT 0
+);
+
+CREATE TABLE Genres (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(50) UNIQUE NOT NULL
+);
+
+CREATE TABLE Movie_Genres (
+  movie_id VARCHAR(64) REFERENCES Movies(id) ON DELETE CASCADE,
+  genre_id INT REFERENCES Genres(id) ON DELETE CASCADE,
+  PRIMARY KEY (movie_id, genre_id)
+);`}
+                          </pre>
+                        )}
+
+                        {activeSchemaTab === 'episodes' && (
+                          <pre className="text-cyan-300 whitespace-pre-wrap">
+{`CREATE TABLE Seasons (
+  id VARCHAR(64) PRIMARY KEY,
+  series_id VARCHAR(64) REFERENCES Movies(id) ON DELETE CASCADE,
+  season_number INT NOT NULL,
+  title_en VARCHAR(255)
+);
+
+CREATE TABLE Episodes (
+  id VARCHAR(64) PRIMARY KEY,
+  season_id VARCHAR(64) REFERENCES Seasons(id) ON DELETE CASCADE,
+  series_id VARCHAR(64) REFERENCES Movies(id) ON DELETE CASCADE,
+  episode_number INT NOT NULL,
+  title_ar VARCHAR(255),
+  title_en VARCHAR(255),
+  description_ar TEXT,
+  description_en TEXT,
+  thumbnail VARCHAR(512),
+  duration VARCHAR(255),
+  video_url VARCHAR(512) NOT NULL
+);`}
+                          </pre>
+                        )}
+
+                        {activeSchemaTab === 'users_profiles' && (
+                          <pre className="text-amber-200 whitespace-pre-wrap">
+{`CREATE TABLE Users (
+  id VARCHAR(64) PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(512) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE Profiles (
+  id VARCHAR(64) PRIMARY KEY,
+  user_id VARCHAR(64) REFERENCES Users(id) ON DELETE CASCADE,
+  name VARCHAR(50) NOT NULL,
+  avatar VARCHAR(10),
+  age INT CHECK (age >= 2 AND age <= 16),
+  is_kids_mode BOOLEAN DEFAULT TRUE,
+  pin VARCHAR(4) DEFAULT '1234'
+);
+
+CREATE TABLE Favorites (
+  profile_id VARCHAR(64) REFERENCES Profiles(id) ON DELETE CASCADE,
+  movie_id VARCHAR(64) REFERENCES Movies(id) ON DELETE CASCADE,
+  PRIMARY KEY (profile_id, movie_id)
+);`}
+                          </pre>
+                        )}
+
+                        {activeSchemaTab === 'sub_payments' && (
+                          <pre className="text-blue-300 whitespace-pre-wrap">
+{`CREATE TABLE Subscriptions (
+  id VARCHAR(64) PRIMARY KEY,
+  user_id VARCHAR(64) REFERENCES Users(id),
+  plan_level VARCHAR(32) CHECK (plan_level IN ('Free', 'Premium', 'Family')),
+  active BOOLEAN DEFAULT TRUE,
+  start_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  end_date TIMESTAMP
+);
+
+CREATE TABLE Payments (
+  id VARCHAR(64) PRIMARY KEY,
+  subscription_id VARCHAR(64) REFERENCES Subscriptions(id),
+  amount NUMERIC(6, 2) NOT NULL,
+  currency VARCHAR(3) DEFAULT 'USD',
+  payment_method VARCHAR(32), -- 'Stripe' / 'PayPal'
+  status VARCHAR(20) DEFAULT 'Succeeded'
+);`}
+                          </pre>
+                        )}
+
+                        {activeSchemaTab === 'logs_analytics' && (
+                          <pre className="text-emerald-300 whitespace-pre-wrap">
+{`CREATE TABLE Security_Logs (
+  id SERIAL PRIMARY KEY,
+  type VARCHAR(32) NOT NULL,
+  severity VARCHAR(16) DEFAULT 'info',
+  message TEXT NOT NULL,
+  ip_address VARCHAR(45),
+  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE Playback_Reports (
+  id SERIAL PRIMARY KEY,
+  profile_id VARCHAR(64) NOT NULL,
+  episode_id VARCHAR(64) NOT NULL,
+  seconds_watched INT NOT NULL,
+  device_carrier VARCHAR(64),
+  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);`}
+                          </pre>
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Right Column details (System integrity log analyzer and Ads manager) */}
+                  <div className="lg:col-span-5 flex flex-col gap-6">
+
+                    {/* DYNAMIC CONTENT FILTERS (As requested by parent restrictions) */}
+                    <div className="bg-[#0F0F15] p-6 rounded-3xl border border-white/5 flex flex-col gap-4 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/10 rounded-full blur-xl pointer-events-none" />
+                      
+                      <h3 className="text-md font-bold text-red-400 flex items-center gap-2">
+                        <Sliders className="w-4 h-4 text-red-500" />
+                        <span>🔒 Content Restrictions & Themes</span>
+                      </h3>
+                      
+                      <p className="text-[11px] text-white/50 leading-relaxed">
+                        Control what your kids can watch. Toggle broad themes or insert custom blacklisted keywords. Blocked content will be instantly hidden from home lists, search results, and AI recommendations.
+                      </p>
+
+                      {/* Theme-based Filter toggles */}
+                      <div className="flex flex-col gap-2">
+                        <span className="text-[10px] text-white/40 uppercase font-black tracking-wider">Broad Blocked Themes</span>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { id: 'no-slapstick', label: 'No Slapstick 🤪', desc: 'Blocks funny content & comedy genres' },
+                            { id: 'no-scary', label: 'No Scary/Monsters 👻', desc: 'Blocks ghosts, monsters & horror' },
+                            { id: 'no-action', label: 'No Action/Ninjas ⚔️', desc: 'Blocks martial arts, ninja training & battles' },
+                            { id: 'no-gadgets', label: 'No Gadgets 🤖', desc: 'Blocks futuristic gadgets & doraemon' }
+                          ].map(theme => {
+                            const isBlocked = (dbSettings?.blockedThemes || []).includes(theme.id);
+                            return (
+                              <button
+                                key={theme.id}
+                                type="button"
+                                onClick={async () => {
+                                  const currentThemes: string[] = dbSettings?.blockedThemes || [];
+                                  const newThemes = currentThemes.includes(theme.id)
+                                    ? currentThemes.filter(id => id !== theme.id)
+                                    : [...currentThemes, theme.id];
+                                  
+                                  // Server Sync
+                                  try {
+                                    const res = await fetch('/api/settings/update', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ blockedThemes: newThemes })
+                                    });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                      setDbSettings(data.settings);
+                                    }
+                                  } catch (e) {
+                                    console.error("Error setting blocked themes", e);
+                                  }
+                                }}
+                                className={`p-3 rounded-2xl border text-left flex flex-col gap-1 transition-all duration-300 ${
+                                  isBlocked
+                                    ? 'bg-red-500/10 border-red-500/30 text-red-200'
+                                    : 'bg-white/5 border-white/5 hover:border-white/10 text-white/70'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between w-full">
+                                  <span className="text-xs font-bold">{theme.label}</span>
+                                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center transition-all ${
+                                    isBlocked ? 'bg-red-500 text-white animate-pulse' : 'border border-white/20'
+                                  }`}>
+                                    {isBlocked && <span className="text-[8px] font-bold">✓</span>}
+                                  </div>
+                                </div>
+                                <span className="text-[9px] text-white/40 leading-tight">{theme.desc}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Custom keyword filter list */}
+                      <div className="flex flex-col gap-2.5 mt-2 pt-4 border-t border-white/5">
+                        <span className="text-[10px] text-white/40 uppercase font-black tracking-wider">Custom Blacklisted Keywords</span>
+                        
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (!customKeywordInput.trim()) return;
+                            const word = customKeywordInput.trim().toLowerCase();
+                            const currentKeywords: string[] = dbSettings?.customBlockedKeywords || [];
+                            if (currentKeywords.includes(word)) {
+                              setCustomKeywordInput('');
+                              return;
+                            }
+                            const newKeywords = [...currentKeywords, word];
+                            
+                            try {
+                              const res = await fetch('/api/settings/update', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ customBlockedKeywords: newKeywords })
+                              });
+                              const data = await res.json();
+                              if (data.success) {
+                                setDbSettings(data.settings);
+                                setCustomKeywordInput('');
+                              }
+                            } catch (err) {
+                              console.error("Error adding custom blocked keyword", err);
+                            }
+                          }}
+                          className="flex gap-2"
+                        >
+                          <input
+                            type="text"
+                            placeholder="e.g. dragon, space, owl..."
+                            value={customKeywordInput}
+                            onChange={(e) => setCustomKeywordInput(e.target.value)}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl outline-none flex-1 focus:border-red-500/30 transition-colors"
+                          />
+                          <button
+                            type="submit"
+                            className="bg-red-500 hover:bg-red-400 text-white text-xs font-black py-2 px-4 rounded-xl flex items-center gap-1 transition-all"
+                          >
+                            Block
+                          </button>
+                        </form>
+
+                        {/* Display custom keywords badges */}
+                        {dbSettings?.customBlockedKeywords && dbSettings.customBlockedKeywords.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {dbSettings.customBlockedKeywords.map((word: string) => (
+                              <span
+                                key={word}
+                                className="bg-red-500/15 border border-red-500/20 text-red-300 text-[10px] font-bold pl-2.5 pr-1.5 py-1 rounded-lg flex items-center gap-1.5 animate-fade-in"
+                              >
+                                <span>{word}</span>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const currentKeywords: string[] = dbSettings?.customBlockedKeywords || [];
+                                    const newKeywords = currentKeywords.filter(k => k !== word);
+                                    
+                                    try {
+                                      const res = await fetch('/api/settings/update', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ customBlockedKeywords: newKeywords })
+                                      });
+                                      const data = await res.json();
+                                      if (data.success) {
+                                        setDbSettings(data.settings);
+                                      }
+                                    } catch (err) {
+                                      console.error("Error removing custom blocked keyword", err);
+                                    }
+                                  }}
+                                  className="w-4 h-4 rounded hover:bg-red-500/30 flex items-center justify-center transition-all text-red-400 hover:text-red-200"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-white/30 italic">No custom words blacklisted yet.</span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Create / Manage child profiles widget */}
+                    <div className="bg-[#0F0F15] p-6 rounded-3xl border border-white/5 flex flex-col gap-4">
+                      <h3 className="text-md font-bold text-amber-300 flex items-center gap-2">
+                        <Users className="w-4 h-4 text-amber-400" />
+                        {t('manageProfiles')}
+                      </h3>
+
+                      <form onSubmit={handleCreateProfile} className="flex flex-col gap-3 pb-4 border-b border-white/5">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            required
+                            placeholder="Child's Name"
+                            value={newProfileName}
+                            onChange={(e) => setNewProfileName(e.target.value)}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2.5 rounded-xl outline-none flex-1"
+                          />
+                          <select
+                            value={newProfileAvatar}
+                            onChange={(e) => setNewProfileAvatar(e.target.value)}
+                            className="bg-black/40 border border-white/10 text-white text-xs p-2 rounded-xl"
+                          >
+                            <option value="🦁">🦁 Lion</option>
+                            <option value="🦄">🦄 Unicorn</option>
+                            <option value="🐲">🐲 Dragon</option>
+                            <option value="🐼">🐼 Panda</option>
+                            <option value="🐸">🐸 Frog</option>
+                            <option value="🦊">🦊 Fox</option>
+                          </select>
+                        </div>
+                        <div className="flex justify-between items-center gap-2">
+                          <div className="flex items-center gap-2 text-xs text-white/60">
+                            <span>Age Limit: {newProfileAge} yrs</span>
+                            <input
+                              type="range"
+                              min="3"
+                              max="15"
+                              value={newProfileAge}
+                              onChange={(e) => setNewProfileAge(Number(e.target.value))}
+                              className="accent-amber-400 cursor-pointer w-24"
+                            />
+                          </div>
+                          
+                          <button
+                            type="submit"
+                            className="bg-amber-400 hover:bg-amber-300 text-black text-xs font-black py-2 px-4 rounded-xl flex items-center gap-1.5 transition-all"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add Profile
+                          </button>
+                        </div>
+                      </form>
+
+                      {/* Display profiles list with deletion option */}
+                      <div className="flex flex-col gap-2">
+                        {profiles.map(p => (
+                          <div key={p.id} className="bg-white/5 p-3 rounded-2xl flex items-center justify-between border border-white/5">
+                            <div className="flex items-center gap-2.5">
+                              {p.customAvatar ? (
+                                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${p.color} flex items-center justify-center overflow-hidden border border-white/10`}>
+                                  <CustomAvatarRenderer config={p.customAvatar} className="w-8 h-8" />
+                                </div>
+                              ) : (
+                                <span className="text-2xl w-10 h-10 flex items-center justify-center bg-white/5 rounded-xl border border-white/5">{p.avatar}</span>
+                              )}
+                              <div>
+                                <h4 className="text-xs font-bold text-white">{p.name}</h4>
+                                <span className="text-[10px] text-white/40">Age Limit: {p.age} years</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedProfileToEdit(p);
+                                  setEditingAvatarConfig(p.customAvatar || {
+                                    bodyType: 'blob',
+                                    color: '#EC4899',
+                                    eyes: 'sparkle',
+                                    mouth: 'smile',
+                                    accessory: 'none'
+                                  });
+                                }}
+                                className={`text-[9px] font-black px-2.5 py-1 rounded-lg border transition-all ${
+                                  selectedProfileToEdit?.id === p.id 
+                                    ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-black border-amber-400' 
+                                    : 'bg-white/5 text-amber-300 border-amber-500/20 hover:border-amber-400/50 hover:bg-amber-400/10'
+                                }`}
+                              >
+                                {selectedProfileToEdit?.id === p.id ? 'Editing 🎨' : 'Design 🎨'}
+                              </button>
+                              <button
+                                onClick={() => handleDeleteProfile(p.id)}
+                                className="text-white/40 hover:text-red-400 p-1 bg-white/5 hover:bg-white/10 rounded-lg"
+                                title="Remove profile"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* INTERACTIVE AVATAR BUILDER (KID-FRIENDLY CHARACTER LAB) */}
+                    {selectedProfileToEdit && editingAvatarConfig && (
+                      <div className="bg-[#0F0F15] p-6 rounded-3xl border border-amber-400/30 flex flex-col gap-5 relative overflow-hidden animate-fade-in shadow-2xl">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-amber-400/10 rounded-full blur-2xl pointer-events-none" />
+                        
+                        <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                          <div>
+                            <h3 className="text-md font-black text-amber-300 flex items-center gap-2">
+                              <Sparkles className="w-5 h-5 text-amber-400 animate-spin-slow" />
+                              <span>🎨 {lang === 'ar' ? "صانع الشخصيات السحري" : "Magic Character Designer Lab"}</span>
+                            </h3>
+                            <span className="text-[10px] text-white/50">
+                              {lang === 'ar' ? "تصميم الصورة الرمزية لـ " : "Designing profile avatar for "} <strong className="text-white">{selectedProfileToEdit.name}</strong>
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedProfileToEdit(null);
+                              setEditingAvatarConfig(null);
+                            }}
+                            className="text-white/40 hover:text-white bg-white/5 hover:bg-white/10 p-1.5 rounded-lg text-xs"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-center">
+                          {/* Visual Live Preview Column */}
+                          <div className="md:col-span-4 flex flex-col items-center justify-center bg-black/40 p-4 rounded-2xl border border-white/5 relative group/preview">
+                            <div className={`w-28 h-28 rounded-full bg-gradient-to-br ${selectedProfileToEdit.color} p-[3px] shadow-lg shadow-amber-500/10 group-hover/preview:scale-105 transition-transform duration-300`}>
+                              <div className="w-full h-full bg-[#12121e] rounded-full flex items-center justify-center overflow-hidden">
+                                <CustomAvatarRenderer config={editingAvatarConfig} className="w-24 h-24" />
+                              </div>
+                            </div>
+                            <span className="text-[10px] text-amber-400 font-bold tracking-widest uppercase mt-3 animate-pulse">
+                              {lang === 'ar' ? "معاينة حية" : "Live Hologram"}
+                            </span>
+                          </div>
+
+                          {/* Editor controls column */}
+                          <div className="md:col-span-8 flex flex-col gap-4">
+                            {/* Style Selector 1: Head Shape */}
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] uppercase font-black tracking-wider text-white/40">1. {lang === 'ar' ? "شكل الرأس والجسم" : "Head Body Shape"}</label>
+                              <div className="grid grid-cols-5 gap-1.5">
+                                {(['blob', 'box', 'bunny', 'cat', 'star'] as const).map(shape => (
+                                  <button
+                                    key={shape}
+                                    type="button"
+                                    onClick={() => setEditingAvatarConfig(prev => prev ? { ...prev, bodyType: shape } : null)}
+                                    className={`text-[9px] font-black capitalize py-1.5 px-0.5 rounded-lg border transition-all ${
+                                      editingAvatarConfig.bodyType === shape
+                                        ? 'bg-amber-405 bg-amber-400 text-black border-amber-400'
+                                        : 'bg-white/5 text-white border-white/10 hover:border-white/30'
+                                    }`}
+                                  >
+                                    {shape}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Style Selector 2: Colors Row */}
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] uppercase font-black tracking-wider text-white/40">2. {lang === 'ar' ? "لون البشرة" : "Skin Core Color"}</label>
+                              <div className="flex items-center gap-2">
+                                {[
+                                  { hex: '#EC4899', name: 'Pink' },
+                                  { hex: '#06B6D4', name: 'Cyber Blue' },
+                                  { hex: '#10B981', name: 'Slime Green' },
+                                  { hex: '#F59E0B', name: 'Orange Glow' },
+                                  { hex: '#8B5CF6', name: 'Vibrant Violet' },
+                                  { hex: '#FBBF24', name: 'Cosmic Yellow' }
+                                ].map(col => (
+                                  <button
+                                    key={col.hex}
+                                    type="button"
+                                    onClick={() => setEditingAvatarConfig(prev => prev ? { ...prev, color: col.hex } : null)}
+                                    className={`w-6 h-6 rounded-full border-2 transition-all hover:scale-110 flex items-center justify-center ${
+                                      editingAvatarConfig.color === col.hex ? 'border-amber-400 scale-110 shadow-md ring-2 ring-amber-400/50' : 'border-transparent'
+                                    }`}
+                                    style={{ backgroundColor: col.hex }}
+                                    title={col.name}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Style Selector 3: Eyes Expression */}
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] uppercase font-black tracking-wider text-white/40">3. {lang === 'ar' ? "تعبير العينين" : "Eyes Expression"}</label>
+                              <div className="grid grid-cols-5 gap-1.5">
+                                {(['sparkle', 'cool', 'wink', 'joy', 'glasses'] as const).map(eyeKind => (
+                                  <button
+                                    key={eyeKind}
+                                    type="button"
+                                    onClick={() => setEditingAvatarConfig(prev => prev ? { ...prev, eyes: eyeKind } : null)}
+                                    className={`text-[9px] font-black capitalize py-1.5 px-0.5 rounded-lg border transition-all ${
+                                      editingAvatarConfig.eyes === eyeKind
+                                        ? 'bg-amber-400 text-black border-amber-400'
+                                        : 'bg-white/5 text-white border-white/10 hover:border-white/30'
+                                    }`}
+                                  >
+                                    {eyeKind}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Style Selector 4: Mouth Expression */}
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] uppercase font-black tracking-wider text-white/40">4. {lang === 'ar' ? "الفم والضحكة" : "Mouth & Expression"}</label>
+                              <div className="grid grid-cols-5 gap-1.5">
+                                {(['smile', 'tongue', 'whiskers', 'vamp', 'mustache'] as const).map(mouthKind => (
+                                  <button
+                                    key={mouthKind}
+                                    type="button"
+                                    onClick={() => setEditingAvatarConfig(prev => prev ? { ...prev, mouth: mouthKind } : null)}
+                                    className={`text-[9px] font-black capitalize py-1.5 px-0.5 rounded-lg border transition-all ${
+                                      editingAvatarConfig.mouth === mouthKind
+                                        ? 'bg-amber-400 text-black border-amber-400'
+                                        : 'bg-white/5 text-white border-white/10 hover:border-white/30'
+                                    }`}
+                                  >
+                                    {mouthKind}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Style Selector 5: Headwear & Accessories */}
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] uppercase font-black tracking-wider text-white/40">5. {lang === 'ar' ? "القبعات والإكسسوارات" : "Headwear & Accessories"}</label>
+                              <div className="grid grid-cols-4 gap-1.5">
+                                {(['crown', 'wizard', 'party', 'headphones', 'space', 'flower', 'none'] as const).map(acc => (
+                                  <button
+                                    key={acc}
+                                    type="button"
+                                    onClick={() => setEditingAvatarConfig(prev => prev ? { ...prev, accessory: acc } : null)}
+                                    className={`text-[9px] font-black capitalize py-1.5 px-0.5 rounded-lg border transition-all ${
+                                      editingAvatarConfig.accessory === acc
+                                        ? 'bg-amber-400 text-black border-amber-400'
+                                        : 'bg-white/5 text-white border-white/10 hover:border-white/30'
+                                    }`}
+                                  >
+                                    {acc}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Saving alerts */}
+                        {saveAvatarSuccess && (
+                          <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs p-3 rounded-2xl text-center font-bold animate-pulse">
+                            🚀 {lang === 'ar' ? "تم حفظ تصميم الشخصية الخاصة بك في خوادم السحاب بنجاح!" : "Profile custom character design saved to cloud systems!"}
+                          </div>
+                        )}
+
+                        {/* Actions footer */}
+                        <div className="flex justify-end gap-3 pt-3 border-t border-white/5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedProfileToEdit(null);
+                              setEditingAvatarConfig(null);
+                            }}
+                            className="px-4 py-2 rounded-xl bg-white/5 text-xs text-white/60 hover:text-white transition-all hover:bg-white/10"
+                          >
+                            {lang === 'ar' ? "إلغاء الأمر" : "Cancel"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveCustomAvatar}
+                            disabled={saveAvatarLoading}
+                            className="px-5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-amber-400/15"
+                          >
+                            {saveAvatarLoading ? (
+                              <>
+                                <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                                <span>{lang === 'ar' ? "جاري الإرسال للبث السحابي..." : "Cast-Transmitting..."}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Check className="w-4 h-4" />
+                                <span>{lang === 'ar' ? "حفظ تصميم الشخصية" : "Save Character Design"}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Integrated custom ads settings toggler */}
+                    <div className="bg-[#0F0F15] p-6 rounded-3xl border border-white/5 flex flex-col gap-4">
+                      <h3 className="text-md font-bold text-cyan-400 flex items-center gap-2">
+                        <Radio className="w-4 h-4 text-cyan-300 animate-pulse" />
+                        {t('adsManagement')}
+                      </h3>
+                      <p className="text-[11px] text-white/50 leading-relaxed">
+                        Toggle compliance for kids-friendly promotional campaigns. Advertisements are restricted exclusively to non-invasive academic tools inside the application space.
+                      </p>
+
+                      <div className="flex flex-col gap-3">
+                        {ads.map(ad => (
+                          <div key={ad.id} className="bg-black/30 p-3 rounded-2xl border border-white/5 flex items-center justify-between">
+                            <div className="flex items-center gap-2 max-w-[70%]">
+                              <img src={ad.imageUrl} alt="" className="w-10 h-10 object-cover rounded-lg" />
+                              <div className="min-w-0">
+                                <h4 className="text-xs font-extrabold truncate text-white">{ad.title}</h4>
+                                <span className="text-[9px] uppercase tracking-widest text-[#FF0080] font-bold">{ad.type} AD</span>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => handleToggleAd(ad.id)}
+                              className={`text-[10px] font-bold px-3 py-1.5 rounded-xl transition-all ${
+                                ad.isActive 
+                                  ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30' 
+                                  : 'bg-white/5 text-white/40'
+                              }`}
+                            >
+                              {ad.isActive ? 'Active ON' : 'Deactivated'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Security Access Monitor Dashboard */}
+                    <div className="bg-[#0F0F15] p-6 rounded-3xl border border-white/5 flex flex-col gap-4">
+                      <h3 className="text-md font-bold text-rose-400 flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-rose-500" />
+                        {t('securityAudit')}
+                      </h3>
+
+                      <div className="flex flex-col gap-2 max-h-[250px] overflow-y-auto">
+                        {logs.map(log => (
+                          <div key={log.id} className="bg-black/40 p-3 rounded-xl border border-white/5 text-[10px] flex flex-col gap-1 font-mono">
+                            <div className="flex items-center justify-between font-bold">
+                              <span className={`uppercase font-black text-[8px] px-1.5 py-0.5 rounded ${
+                                log.severity === 'danger' 
+                                  ? 'bg-red-500/20 text-red-400' 
+                                  : log.severity === 'warning'
+                                  ? 'bg-amber-500/20 text-amber-400'
+                                  : 'bg-cyan-500/10 text-cyan-300'
+                              }`}>
+                                {log.type} - {log.severity}
+                              </span>
+                              <span className="text-white/30">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                            </div>
+                            <p className="text-white/80">{log.message}</p>
+                            {log.ipAddress && <span className="text-white/20 text-[8px]">Client IP: {log.ipAddress}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                  </div>
+
+                </div>
+
+              </div>
+            )}
+
+          </div>
+
+          {/* GLOBAL FOOTER */}
+          <footer className="border-t border-white/5 bg-[#0A0A0E] px-6 md:px-12 py-10 mt-auto text-white/60 text-xs text-center md:text-left">
+            <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+              <div className="md:col-span-2 flex flex-col gap-3">
+                <span className="text-white font-black text-lg italic tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-[#00F2FF]">
+                  {t('brandName').toUpperCase()}
+                </span>
+                <p className="leading-relaxed max-w-sm">
+                  {t('footerAbout')}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2 font-semibold">
+                <h4 className="text-white font-bold uppercase tracking-wider mb-2 text-xs">For Families</h4>
+                <button onClick={() => { setActiveTab('subscriptions'); }} className="hover:text-cyan-400 self-center md:self-start">{t('premiumPlan')}</button>
+                <button onClick={() => { setActiveTab('movies'); }} className="hover:text-cyan-400 self-center md:self-start">{t('movies')}</button>
+                <button onClick={() => { setActiveTab('series'); }} className="hover:text-cyan-400 self-center md:self-start">{t('series')}</button>
+                <button onClick={() => { setActiveTab('educational'); }} className="hover:text-cyan-400 self-center md:self-start">{t('educational')}</button>
+              </div>
+
+              <div className="flex flex-col gap-2 font-semibold">
+                <h4 className="text-white font-bold uppercase tracking-wider mb-2 text-xs">Regulations & Safety</h4>
+                <a href="#privacy" className="hover:text-cyan-400">{t('privacyPolicy')}</a>
+                <a href="#terms" className="hover:text-cyan-400">{t('termsOfService')}</a>
+                <a href="#dmca" className="hover:text-cyan-400">{t('dmcaNotice')} (DMCA)</a>
+                <a href="#about" className="hover:text-cyan-400">{t('aboutUs')}</a>
+              </div>
+            </div>
+
+            <div className="border-t border-white/5 pt-6 text-center text-[10px] text-white/30 flex flex-wrap justify-between items-center max-w-7xl mx-auto gap-4">
+              <span>{t('allRightsReserved')} &copy; 2026.</span>
+              <span className="font-mono text-[9px] bg-white/[0.02] py-1 px-3 rounded-full uppercase tracking-widest text-[#00F2FF]/40 border border-white/5">
+                PORT 3000 • SANDBOX SECURE ENTRANCE
+              </span>
+            </div>
+          </footer>
+
+        </main>
+      </div>
+
+      {/* PARENTAL PASSWORD/PIN ACCESS MODAL */}
+      {showParentPinModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xl flex items-center justify-center z-50 p-4">
+          <div className="bg-[#0F0F15] border border-red-500/20 max-w-md w-full rounded-[30px] p-8 flex flex-col gap-6 shadow-2xl relative animate-scale-up">
+            
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-red-500 to-amber-500 flex items-center justify-center shadow-lg shadow-red-500/15">
+                <Shield className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black tracking-tight">{t('parentPinVerify')}</h3>
+                <p className="text-[11px] text-white/40">{t('parentPinSub')}</p>
+              </div>
+            </div>
+
+            {pinError && (
+              <div className="bg-red-500/10 border border-red-500/30 text-rose-300 p-3 rounded-2xl text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                <span>{t('parentPinError')}</span>
+              </div>
+            )}
+
+            <form onSubmit={handlePinSubmit} className="flex flex-col gap-4">
+              <input
+                type="password"
+                required
+                maxLength={4}
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value)}
+                placeholder="••••"
+                className="bg-black/40 border border-white/10 text-white text-center text-3xl font-black py-4 rounded-2xl outline-none focus:ring-2 focus:ring-red-500 tracking-widest"
+              />
+
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowParentPinModal(false);
+                    setPinInput('');
+                    setPinError(false);
+                  }}
+                  className="bg-white/5 hover:bg-white/10 text-white text-xs font-bold py-3 px-4 rounded-xl flex-1 text-center"
+                >
+                  {t('cancel')}
+                </button>
+                <button
+                  type="submit"
+                  className="bg-gradient-to-r from-red-500 to-amber-500 text-white text-xs font-black py-3 px-4 rounded-xl flex-1 text-center shadow-lg shadow-red-500/20"
+                >
+                  {t('submit')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* AI ROBOT COMPANION "BEEP-BOOP" MODAL DIALOG */}
+      {showAiModal && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-xl flex items-center justify-center z-50 p-4">
+          <div className="bg-[#0F0F15] border border-cyan-400/20 max-w-2xl w-full rounded-[38px] p-6 md:p-8 flex flex-col gap-6 relative overflow-hidden shadow-2xl animate-scale-up">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-400/10 rounded-full blur-2xl pointer-events-none" />
+            
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-gradient-to-tr from-[#00F2FF] to-[#7928CA] rounded-2xl flex items-center justify-center shadow-lg shadow-cyan-400/20 animate-pulse">
+                <span className="text-3xl text-white">🤖</span>
+              </div>
+              <div>
+                <h3 className="text-xl font-black tracking-tight">{t('aiSearchHeadline')}</h3>
+                <p className="text-xs text-[#00F2FF]/60 font-semibold">{t('aiSearchSub')}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAiModal(false);
+                  setAiPrompt('');
+                  setAiResponse(null);
+                }}
+                className="text-white/40 hover:text-white text-2xl ml-auto border border-white/10 w-8 h-8 rounded-full flex items-center justify-center"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleAiSearchSubmit} className="flex flex-col gap-3">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  required
+                  placeholder={t('aiPromptLabel')}
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  className="bg-black/55 border border-white/15 text-white text-sm p-4 rounded-2xl outline-none flex-1 focus:ring-2 focus:ring-[#00F2FF] transition-all"
+                />
+                
+                <button
+                  type="submit"
+                  disabled={aiIsLoading}
+                  className="bg-gradient-to-r from-[#00F2FF] to-[#7928CA] text-white px-6 rounded-2xl font-black text-xs hover:shadow-lg hover:shadow-cyan-400/10 duration-300 flex items-center justify-center"
+                >
+                  {aiIsLoading ? t('downloading') : 'TALK 🚀'}
+                </button>
+              </div>
+            </form>
+
+            {/* Response Section */}
+            {aiIsLoading && (
+              <div className="flex flex-col items-center justify-center py-10 gap-2 font-bold text-xs text-white/40">
+                <div className="w-10 h-10 border-2 border-dashed border-[#00F2FF] rounded-full animate-spin mb-3"></div>
+                <span>Beep-Boop is parsing global animation indices using real-time vectors...</span>
+              </div>
+            )}
+
+            {aiResponse && (
+              <div className="bg-black/55 border border-white/5 p-5 rounded-2xl flex flex-col gap-4 animate-fade-in relative">
+                <div className="absolute top-3 right-3 bg-cyan-400 text-black text-[8px] font-black px-2 py-0.5 rounded uppercase font-mono">
+                  {aiResponse.mode || 'AI ENGINE'}
+                </div>
+                
+                <div className="flex gap-2 items-start">
+                  <span className="text-lg">🤖</span>
+                  <p className="text-xs md:text-sm font-semibold text-cyan-100 italic leading-relaxed">
+                    &quot;{aiResponse.explanation}&quot;
+                  </p>
+                </div>
+
+                {/* Recommendations carousel inside robot box */}
+                {recList.length > 0 && (
+                  <div className="flex flex-col gap-2 mt-2">
+                    <span className="text-[10px] text-white/40 uppercase font-black tracking-widest">{t('recForYou')}</span>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {recList.map(item => (
+                        <div
+                          key={item.id}
+                          onClick={() => {
+                            setActiveVideo(item);
+                            setShowAiModal(false);
+                            document.getElementById('video-arena')?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className="bg-white/5 border border-white/10 rounded-xl p-2 cursor-pointer hover:border-cyan-400 group transition-all"
+                        >
+                          <img src={item.poster} alt="" className="w-full h-16 object-cover rounded-lg group-hover:opacity-80" />
+                          <h4 className="text-[10px] font-bold line-clamp-1 text-white mt-1.5">{item.title[lang] || item.title.en}</h4>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SPEECH RECOGNITION LIVE VOICE HUD FEEDBACK */}
+      <AnimatePresence>
+        {isVoiceActive && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.9 }}
+            className={`fixed bottom-6 right-6 left-6 md:left-auto md:w-[350px] bg-[#0A0A12]/95 border border-cyan-500/30 rounded-[30px] p-5 shadow-2xl z-50 backdrop-blur-md overflow-hidden animate-fade-in ${
+              isRtl ? 'text-right' : 'text-left'
+            }`}
+          >
+            {/* Ambient decorative backdrop glow */}
+            <div className="absolute -bottom-8 -left-8 w-24 h-24 bg-cyan-500/20 rounded-full blur-xl pointer-events-none" />
+            <div className="absolute -top-8 -right-8 w-24 h-24 bg-red-500/10 rounded-full blur-xl pointer-events-none" />
+
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                </span>
+                <span className="text-xs font-black tracking-widest text-[#00F2FF] uppercase">
+                  {isRtl ? 'التحكم الصوتي السحري 🎙️' : 'Magic Voice Control 🎙️'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsVoiceActive(false)}
+                className="text-white/40 hover:text-white-80 text-xs bg-white/5 hover:bg-white/10 w-6 h-6 rounded-full flex items-center justify-center transition-all"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Simulated Animated Audio Waveforms */}
+            <div className="flex items-center justify-center gap-1.5 my-4 h-6">
+              <div className="w-1 bg-[#00F2FF] rounded-full animate-[bounce_1s_infinite] min-h-[4px]" style={{ animationDelay: '0.1s' }} />
+              <div className="w-1 bg-purple-500 rounded-full animate-[bounce_1s_infinite] min-h-[14px]" style={{ animationDelay: '0.3s' }} />
+              <div className="w-1 bg-pink-500 rounded-full animate-[bounce_1s_infinite] min-h-[22px]" style={{ animationDelay: '0.5s' }} />
+              <div className="w-1 bg-[#00F2FF] rounded-full animate-[bounce_1s_infinite] min-h-[16px]" style={{ animationDelay: '0.2s' }} />
+              <div className="w-1 bg-purple-500 rounded-full animate-[bounce_1s_infinite] min-h-[10px]" style={{ animationDelay: '0.4s' }} />
+              <div className="w-1 bg-pink-500 rounded-full animate-[bounce_1s_infinite] min-h-[4px]" style={{ animationDelay: '0.1s' }} />
+            </div>
+
+            {/* Real-time speech transcript indicator */}
+            <div className="bg-black/40 border border-white/5 rounded-2xl p-3.5 text-center min-h-[64px] flex flex-col items-center justify-center gap-1">
+              {voiceTranscript ? (
+                <>
+                  <span className="text-[10px] uppercase tracking-wider text-pink-400 font-extrabold">
+                    {isRtl ? 'سمعت للتو:' : 'Heard Live:'}
+                  </span>
+                  <p className="text-xs font-bold text-white italic">
+                    &quot;{voiceTranscript}&quot;
+                  </p>
+                </>
+              ) : (
+                <div className="flex flex-col items-center gap-1">
+                  <p className="text-xs text-white/50 animate-pulse font-medium">
+                    {voiceStatus === 'listening' 
+                      ? (isRtl ? 'بانتظار أمرك الصوتي... تحدث الآن 💫' : 'Listening for your command... Speak now 💫')
+                      : (isRtl ? 'جاري البدء...' : 'Ready...')}
+                  </p>
+                  <span className="text-[9px] text-white/30 italic">
+                    {isRtl ? 'تحدث بوضوح نحو الميكروفون' : 'Speak clearly into your microphone'}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Quick Helper guidelines of voice commands */}
+            <div className="mt-4 flex flex-col gap-2">
+              <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
+                {isRtl ? 'الأوامر الصوتية المدعومة:' : 'Try saying these commands:'}
+              </span>
+              
+              <div className="flex flex-col gap-1.5 text-[11px] text-white/70">
+                <div className="flex items-center justify-between bg-white/5 p-1.5 px-3 rounded-xl border border-white/5">
+                  <span className="font-extrabold text-[#00F2FF]">{isRtl ? '1. تشغيل / شغله' : '1. "play"'}</span>
+                  <span className="text-[10px] text-white/40">{isRtl ? 'يبدأ تشغيل الفيديو' : 'Starts simulated video'}</span>
+                </div>
+                <div className="flex items-center justify-between bg-white/5 p-1.5 px-3 rounded-xl border border-white/5">
+                  <span className="font-extrabold text-pink-400">{isRtl ? '2. إيقاف / قف' : '2. "pause"'}</span>
+                  <span className="text-[10px] text-white/40">{isRtl ? 'يوقف المشغل مؤقتاً' : 'Pauses simulated video'}</span>
+                </div>
+                <div className="flex items-center justify-between bg-white/5 p-1.5 px-3 rounded-xl border border-white/5">
+                  <span className="font-extrabold text-[#00F2FF]">{isRtl ? '3. الرئيسية' : '3. "go home"'}</span>
+                  <span className="text-[10px] text-white/40">{isRtl ? 'العودة للصفحة الرئيسية' : 'Returns to home feed'}</span>
+                </div>
+                <div className="flex flex-col gap-1 bg-white/5 p-2 rounded-xl border border-white/5 text-left">
+                  <span className="font-extrabold text-purple-400">
+                    {isRtl ? '4. ابحث عن [كلمة]' : '4. "search for [keyword]"'}
+                  </span>
+                  <p className="text-[9px] text-white/40 leading-tight">
+                    {isRtl 
+                      ? 'مثال: "ابحث عن ديناصورات" للبحث التلقائي السريع' 
+                      : 'e.g. "search for dinosaurs" or "search for rabbits"'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <p className="text-[9px] text-white/30 mt-3 text-center">
+              {isRtl 
+                ? 'ملاحظة: يتطلب هذا المتصفح ميزة Speech Recognition.' 
+                : 'Supports Firefox, Chrome, Edge and Safari Web Speech API'}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+    </div>
+  );
+}

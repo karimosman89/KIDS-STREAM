@@ -1,0 +1,6 @@
+{
+  "name": "Kids Stream",
+  "description": "A premium, secure global kids streaming platform with multi-lingual support, an interactive responsive video player, and an AI-powered smart search and recommendation system.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
