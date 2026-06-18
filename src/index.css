@@ -1,1 +1,59 @@
 @import "tailwindcss";
+
+@property --gradient-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes rotate-gradient {
+  0% {
+    --gradient-angle: 0deg;
+  }
+  100% {
+    --gradient-angle: 360deg;
+  }
+}
+
+#video-arena {
+  position: relative;
+  transition: border-radius 0.6s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.5s, box-shadow 0.5s !important;
+}
+
+#video-arena:hover {
+  border-radius: 42px !important;
+}
+
+#video-arena.glow-enabled::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 35px;
+  padding: 2px;
+  background: conic-gradient(
+    from var(--gradient-angle),
+    transparent 0%,
+    rgba(34, 211, 238, 0.8) 25%,
+    transparent 50%,
+    transparent 60%,
+    rgba(168, 85, 247, 0.8) 85%,
+    transparent 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), border-radius 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#video-arena.glow-enabled:hover::after {
+  opacity: 1;
+  border-radius: 42px;
+  animation: rotate-gradient 4s linear infinite;
+}
+
+#video-arena.scroll-paused::after {
+  animation-play-state: paused !important;
+}

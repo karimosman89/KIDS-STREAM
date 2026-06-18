@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Play, Pause, Volume2, RotateCcw, Monitor, Download, Maximize, 
+  Play, Pause, Volume2, RotateCcw, Monitor, Download, Maximize, Minimize, 
   Search, Mic, Globe, Users, Shield, Plus, Heart, Watch, Star, Check, 
   Tv, Radio, ListMusic, Layers, ChevronRight, Settings, Info, Dumbbell, 
   Sparkles, Sliders, LogOut, CheckCircle, Database, AlertCircle, Trash2, 
   HelpCircle, ChevronLeft, ArrowRight, Eye, Film, BookOpen, MessageSquare,
-  FastForward, Send, Link, Crown, X
+  FastForward, Send, Link, Crown, X, ChevronDown, ChevronUp, List, Bookmark, Tag,
+  Activity, Terminal, Keyboard, VolumeX, Lock, Unlock, AudioLines, Sun
 } from 'lucide-react';
 import { TRANSLATIONS, SupportedLanguage } from './locale';
 import { VideoContent, Episode, Comment, SystemLog, Advertisement, UserProfile, CustomAvatarConfig } from './types';
@@ -38,12 +39,16 @@ export default function App() {
   // Videos & Search
   const [videos, setVideos] = useState<VideoContent[]>([]);
   const [activeVideo, setActiveVideo] = useState<VideoContent | null>(null);
+  const [episodeFilter, setEpisodeFilter] = useState<'all' | 'unwatched' | 'favorites' | 'queue'>('all');
+  const [isEpisodesCollapsed, setIsEpisodesCollapsed] = useState<boolean>(false);
   const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [playbackQueue, setPlaybackQueue] = useState<Episode[]>([]);
   
   // Computed property to identify the next episode for autoplay
   const currentEpisodeIndex = episodes.findIndex(ep => ep.id === currentEpisode?.id);
   const nextEpisode = currentEpisodeIndex !== -1 && currentEpisodeIndex < episodes.length - 1 ? episodes[currentEpisodeIndex + 1] : null;
+  const nextUpEpisode = playbackQueue.length > 0 ? playbackQueue[0] : nextEpisode;
   const [searchQuery, setSearchQuery] = useState<string>('');
   
   // AI Companion & Smart Search states
@@ -52,6 +57,19 @@ export default function App() {
   const [aiResponse, setAiResponse] = useState<{ recommendedIds?: string[]; explanation?: string; mode?: string } | null>(null);
   const [showAiModal, setShowAiModal] = useState<boolean>(false);
   const [recList, setRecList] = useState<VideoContent[]>([]);
+  const [isGlowEnabled, setIsGlowEnabled] = useState<boolean>(true);
+  const [isScrolling, setIsScrolling] = useState<boolean>(false);
+  const [showArenaTooltip, setShowArenaTooltip] = useState<boolean>(false);
+  const [isCinematicMode, setIsCinematicMode] = useState<boolean>(false);
+  const [isTheaterMode, setIsTheaterMode] = useState<boolean>(false);
+  const [showSettingsPopover, setShowSettingsPopover] = useState<boolean>(false);
+  const [videoTechnicalMeta, setVideoTechnicalMeta] = useState<{
+    resolution: string;
+    fps: number;
+    codec: string;
+    bitrate: string;
+  } | null>(null);
+  const hoverTimerRef = useRef<any>(null);
   
   // Video Player custom simulator states
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -81,6 +99,7 @@ export default function App() {
   
   // Favorites list
   const [favorites, setFavorites] = useState<string[]>(['v1', 'v5']);
+  const [episodeFavorites, setEpisodeFavorites] = useState<string[]>([]);
   
   // Parent & Admin states
   const [isParentAuthorized, setIsParentAuthorized] = useState<boolean>(false);
@@ -144,11 +163,294 @@ export default function App() {
   const [playerDuration, setPlayerDuration] = useState<number>(0);
   const [autoplayCancelled, setAutoplayCancelled] = useState<boolean>(false);
   const [showSkipIntroToast, setShowSkipIntroToast] = useState<boolean>(false);
+  const [isMiniPlayer, setIsMiniPlayer] = useState<boolean>(false);
+  const [hoveredTime, setHoveredTime] = useState<number | null>(null);
+  const [hoverX, setHoverX] = useState<number | null>(null);
+  const [bookmarks, setBookmarks] = useState<{ id: string, time: number, title: string }[]>([]);
+  const [showAddBookmark, setShowAddBookmark] = useState<boolean>(false);
+  const [newBookmarkTitle, setNewBookmarkTitle] = useState<string>('');
+  const [hoveredBookmark, setHoveredBookmark] = useState<{ id: string, time: number, title: string, x: number } | null>(null);
+
+  const [activeProviderId, setActiveProviderId] = useState<string>('vidbox-ultra');
+  const [isPinging, setIsPinging] = useState<boolean>(false);
+  const [providerPings, setProviderPings] = useState<Record<string, number>>({
+    'vidbox-ultra': 24,
+    'hls-cyber': 41,
+    'vidsrc-embed': 65,
+    'super-fast': 31,
+    'backup-slow': 185
+  });
+  const [activeLogs, setActiveLogs] = useState<string[]>([
+    `[${new Date().toLocaleTimeString()}] Handshaking CDN edge gateway: vidbox-ultra`,
+    `[${new Date().toLocaleTimeString()}] Connection established! Latency: 24ms.`
+  ]);
+
+  // Premium Stream Enhancements
+  const [showStatsForNerds, setShowStatsForNerds] = useState<boolean>(false);
+  const [isPlayerLocked, setIsPlayerLocked] = useState<boolean>(false);
+  const [showHotkeysModal, setShowHotkeysModal] = useState<boolean>(false);
+  const [spatialAudioMode, setSpatialAudioMode] = useState<'off' | 'boost' | 'theater' | 'vocals'>('off');
+  const [ambientBlurIntensity, setAmbientBlurIntensity] = useState<number>(80);
+  const [ambientBlurOpacity, setAmbientBlurOpacity] = useState<number>(60);
+  const [bandwidthData, setBandwidthData] = useState<number[]>([120, 124, 122, 125, 123, 126, 124, 128, 127, 126, 125, 126, 124, 126, 125]);
+  const [videoBrightness, setVideoBrightness] = useState<number>(100);
+
+  useEffect(() => {
+    if (currentEpisode) {
+      const saved = localStorage.getItem(`bookmarks_${currentEpisode.id}`);
+      if (saved) {
+        try {
+          setBookmarks(JSON.parse(saved));
+        } catch (e) {
+          setBookmarks([]);
+        }
+      } else {
+        const dur = playerDuration || 1200;
+        const defaults = [
+          { id: 'def1', time: Math.round(dur * 0.05), title: lang === 'ar' ? 'المقدمة' : 'Opening & Intro' },
+          { id: 'def2', time: Math.round(dur * 0.25), title: lang === 'ar' ? 'بداية الإثارة' : 'Main Story Event' },
+          { id: 'def3', time: Math.round(dur * 0.75), title: lang === 'ar' ? 'ذروة الأحداث' : 'Climax Sequence' },
+          { id: 'def4', time: Math.round(dur * 0.92), title: lang === 'ar' ? 'الخاتمة وشارات النهاية' : 'Resolution & Credits' },
+        ];
+        setBookmarks(defaults);
+      }
+    } else {
+      setBookmarks([]);
+    }
+  }, [currentEpisode?.id, playerDuration, lang]);
+
+  useEffect(() => {
+    if (previewVideoRef.current && hoveredTime !== null && isFinite(hoveredTime)) {
+      previewVideoRef.current.currentTime = hoveredTime;
+    }
+  }, [hoveredTime]);
 
   useEffect(() => {
     setAutoplayCancelled(false);
     setShowSkipIntroToast(false);
   }, [currentEpisode?.id]);
+
+  // Dismiss Theater Mode on pressing ESC key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsTheaterMode(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const formatMinSec = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  const handleAddBookmark = (title: string) => {
+    if (!currentEpisode) return;
+    const time = Math.round(playerCurrentTime);
+    const newB = {
+      id: Date.now().toString(),
+      time,
+      title: title.trim() || (lang === 'ar' ? `علامة مائية @ ${formatMinSec(time)}` : `Marker @ ${formatMinSec(time)}`)
+    };
+    const updated = [...bookmarks, newB].sort((a, b) => a.time - b.time);
+    setBookmarks(updated);
+    localStorage.setItem(`bookmarks_${currentEpisode.id}`, JSON.stringify(updated));
+    setNewBookmarkTitle('');
+    setShowAddBookmark(false);
+  };
+
+  const handleDeleteBookmark = (bId: string) => {
+    if (!currentEpisode) return;
+    const updated = bookmarks.filter(b => b.id !== bId);
+    setBookmarks(updated);
+    localStorage.setItem(`bookmarks_${currentEpisode.id}`, JSON.stringify(updated));
+  };
+
+  const handleSelectProvider = (id: string, nameEn: string) => {
+    setActiveProviderId(id);
+    const newLogs = [
+      `[${new Date().toLocaleTimeString()}] Handshaking CDN edge gateway: ${id}`,
+      `[${new Date().toLocaleTimeString()}] Authenticating session credentials with host node...`,
+      `[${new Date().toLocaleTimeString()}] Switching active source pipeline to ${nameEn}`,
+      `[${new Date().toLocaleTimeString()}] Buffering stream tracks (HLS chunks)...`,
+      `[${new Date().toLocaleTimeString()}] Connection established! Latency is ${providerPings[id]}ms. Channel ready.`
+    ];
+    setActiveLogs(newLogs);
+  };
+
+  const runProviderPingTest = () => {
+    setIsPinging(true);
+    setActiveLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Broadcast global ICMP probe to providers list...`]);
+    setTimeout(() => {
+      const nextPings = {
+        'vidbox-ultra': Math.floor(Math.random() * 15) + 12,
+        'hls-cyber': Math.floor(Math.random() * 25) + 25,
+        'vidsrc-embed': Math.floor(Math.random() * 35) + 45,
+        'super-fast': Math.floor(Math.random() * 20) + 18,
+        'backup-slow': Math.floor(Math.random() * 80) + 130
+      };
+      setProviderPings(nextPings);
+      setIsPinging(false);
+      setActiveLogs(prev => [
+        ...prev, 
+        `[${new Date().toLocaleTimeString()}] Probe complete! Selected optimum tunnel: ${nextPings['vidbox-ultra']}ms`
+      ]);
+    }, 1500);
+  };
+
+  // Realtime Bandwidth Speedometer simulation
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      setBandwidthData(prev => {
+        let baseSpeed = 120;
+        if (activeProviderId === 'vidbox-ultra') baseSpeed = 124;
+        else if (activeProviderId === 'hls-cyber') baseSpeed = 98;
+        else if (activeProviderId === 'vidsrc-embed') baseSpeed = 85;
+        else if (activeProviderId === 'super-fast') baseSpeed = 115;
+        else if (activeProviderId === 'backup-slow') baseSpeed = 24;
+
+        const fluctuation = Math.floor(Math.random() * 12) - 6;
+        const nextSpeed = Math.max(1, baseSpeed + fluctuation);
+        const nextArr = [...prev.slice(1), nextSpeed];
+        return nextArr;
+      });
+    }, 1200);
+    return () => clearInterval(interval);
+  }, [isPlaying, activeProviderId]);
+
+  // Premium Hotkeys and Keyboard Shortcuts Engine
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      if (activeEl && (
+        activeEl.tagName === 'INPUT' || 
+        activeEl.tagName === 'TEXTAREA' || 
+        activeEl.getAttribute('contenteditable') === 'true'
+      )) {
+        return;
+      }
+      
+      const key = e.key.toLowerCase();
+      
+      if (key === 'l') {
+        e.preventDefault();
+        setIsPlayerLocked(prev => {
+          const next = !prev;
+          showSwipeMessage(lang === 'ar' ? (next ? '🔒 تم قفل أزرار التحكم' : '🔓 تم إلغاء قفل أزرار التحكم') : (next ? '🔒 Player Controls Locked' : '🔓 Player Controls Unlocked'));
+          return next;
+        });
+        return;
+      }
+
+      if (isPlayerLocked) return;
+
+      if (e.key === ' ') {
+        e.preventDefault();
+        handlePlayPauseToggle();
+        showSwipeMessage(lang === 'ar' ? (isPlaying ? '⏸️ إيقاف مؤقت' : '▶️ تشغيل') : (isPlaying ? '⏸️ Paused' : '▶️ Playing'));
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (videoRef.current) {
+          const target = Math.min(videoRef.current.duration || 0, videoRef.current.currentTime + 10);
+          videoRef.current.currentTime = target;
+          showSwipeMessage(lang === 'ar' ? 'تقديم 10ث »' : 'Skip 10s »');
+        }
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (videoRef.current) {
+          const target = Math.max(0, videoRef.current.currentTime - 10);
+          videoRef.current.currentTime = target;
+          showSwipeMessage(lang === 'ar' ? '« إرجاع 10ث' : '« Rewind 10s');
+        }
+      } else if (key === 'm') {
+        e.preventDefault();
+        if (videoRef.current) {
+          const isMute = videoRef.current.muted;
+          videoRef.current.muted = !isMute;
+          showSwipeMessage(lang === 'ar' ? (isMute ? '🔊 إلغاء الكتم' : '🔇 كتم الصوت') : (isMute ? '🔊 Unmuted' : '🔇 Muted'));
+        }
+      } else if (key === 't') {
+        e.preventDefault();
+        setIsTheaterMode(prev => {
+          const next = !prev;
+          if (next && isCinematicMode) setIsCinematicMode(false);
+          showSwipeMessage(lang === 'ar' ? (next ? '🎭 نمط المسرح' : '📺 النمط الافتراضي') : (next ? '🎭 Theater Mode' : '📺 Default View'));
+          return next;
+        });
+      } else if (key === 'c') {
+        e.preventDefault();
+        setIsCinematicMode(prev => {
+          const next = !prev;
+          if (next && isTheaterMode) setIsTheaterMode(false);
+          showSwipeMessage(lang === 'ar' ? (next ? '✨ نمط الإضاءة السينمائية' : '⚙️ إيقاف النمط السينمائي') : (next ? '✨ Amber Aura Glow On' : '⚙️ Amber Aura Glow Off'));
+          return next;
+        });
+      } else if (key === 'n') {
+        e.preventDefault();
+        setShowStatsForNerds(prev => {
+          const next = !prev;
+          showSwipeMessage(next ? '⚙️ Stats for Nerds ON' : '⚙️ Stats for Nerds OFF');
+          return next;
+        });
+      } else if (key === 'b') {
+        e.preventDefault();
+        if (currentEpisode) {
+          const time = Math.round(videoRef.current?.currentTime || playerCurrentTime);
+          const quickTitle = lang === 'ar' ? `علامة سريعة @ ${formatMinSec(time)}` : `Quick Tag @ ${formatMinSec(time)}`;
+          handleAddBookmark(quickTitle);
+          showSwipeMessage(lang === 'ar' ? '📍 تم حفظ نقطة الفصل!' : '📍 Chapter tag added!');
+        }
+      } else if (key === 'h') {
+        e.preventDefault();
+        setShowHotkeysModal(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isPlaying, isPlayerLocked, currentEpisode, playerCurrentTime, lang, isCinematicMode, isTheaterMode]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const arena = document.getElementById('video-arena');
+      if (arena && activeVideo) {
+        const rect = arena.getBoundingClientRect();
+        if (rect.bottom < 150) {
+           setIsMiniPlayer(true);
+        } else {
+           setIsMiniPlayer(false);
+        }
+      } else {
+        setIsMiniPlayer(false);
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [activeVideo]);
+
+  useEffect(() => {
+    let scrollTimeout: any;
+    const handleScrollDetect = () => {
+      setIsScrolling(true);
+      if (scrollTimeout) {
+        window.clearTimeout(scrollTimeout);
+      }
+      scrollTimeout = window.setTimeout(() => {
+        setIsScrolling(false);
+      }, 200);
+    };
+    window.addEventListener('scroll', handleScrollDetect, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScrollDetect);
+      if (scrollTimeout) {
+        window.clearTimeout(scrollTimeout);
+      }
+    };
+  }, []);
 
   // Interactive Avatar Builder States
   const [selectedProfileToEdit, setSelectedProfileToEdit] = useState<UserProfile | null>(null);
@@ -346,7 +648,79 @@ export default function App() {
   };
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
   const carouselRef = useRef<HTMLDivElement>(null);
+  const touchStartRef = useRef<{ x: number, y: number } | null>(null);
+  const swipeHandledRef = useRef<boolean>(false);
+  const [showSwipeToast, setShowSwipeToast] = useState<{ message: string, visible: boolean }>({ message: '', visible: false });
+
+  const showSwipeMessage = (msg: string) => {
+    setShowSwipeToast({ message: msg, visible: true });
+    setTimeout(() => setShowSwipeToast(prev => prev.message === msg ? { message: '', visible: false } : prev), 1500);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    swipeHandledRef.current = false;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    // Only handle swipes on actual video element interactions as fallback for iframe touch blocking
+    if (!touchStartRef.current || swipeHandledRef.current) return;
+    
+    const deltaX = e.touches[0].clientX - touchStartRef.current.x;
+    const deltaY = e.touches[0].clientY - touchStartRef.current.y;
+    
+    if (Math.abs(deltaX) > 60 || Math.abs(deltaY) > 60) {
+        if (Math.abs(deltaX) > Math.abs(deltaY)) {
+            // Horizontal swipe
+            if (deltaX > 0) {
+                // Skip forward
+                if (videoRef.current) {
+                    videoRef.current.currentTime += 10;
+                    showSwipeMessage(lang === 'ar' ? 'تقديم 10ث »' : 'Skip 10s »');
+                } else {
+                    showSwipeMessage(lang === 'ar' ? 'غير متاح هنا' : 'Not supported here');
+                }
+            } else {
+                // Skip backward
+                if (videoRef.current) {
+                    videoRef.current.currentTime -= 10;
+                    showSwipeMessage(lang === 'ar' ? '« إرجاع 10ث' : '« Rewind 10s');
+                } else {
+                    showSwipeMessage(lang === 'ar' ? 'غير متاح هنا' : 'Not supported here');
+                }
+            }
+        } else {
+            // Vertical swipe
+            if (deltaY > 0) {
+                // Volume down
+                if (videoRef.current) {
+                    const newVol = Math.max(0, videoRef.current.volume - 0.1);
+                    videoRef.current.volume = newVol;
+                    showSwipeMessage(lang === 'ar' ? `الصوت: ${Math.round(newVol * 100)}%` : `Volume: ${Math.round(newVol * 100)}%`);
+                } else {
+                    showSwipeMessage(lang === 'ar' ? 'غير متاح هنا' : 'Not supported here');
+                }
+            } else {
+                // Volume up
+                if (videoRef.current) {
+                    const newVol = Math.min(1, videoRef.current.volume + 0.1);
+                    videoRef.current.volume = newVol;
+                    showSwipeMessage(lang === 'ar' ? `الصوت: ${Math.round(newVol * 100)}%` : `Volume: ${Math.round(newVol * 100)}%`);
+                } else {
+                    showSwipeMessage(lang === 'ar' ? 'غير متاح هنا' : 'Not supported here');
+                }
+            }
+        }
+        swipeHandledRef.current = true;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    touchStartRef.current = null;
+    swipeHandledRef.current = false;
+  };
 
   const scrollCarousel = (direction: 'left' | 'right') => {
     if (carouselRef.current) {
@@ -448,7 +822,7 @@ export default function App() {
 
          if (target) {
             setActiveVideo(target);
-            setActiveTab('theater');
+            setActiveTab('home');
             
             // If season and episode are specified, we will need to handle setting the current episode 
             // once the episodes are fetched in the separate useEffect. We can store it in a ref or localStorage.
@@ -615,6 +989,22 @@ export default function App() {
       window.history.replaceState({}, '', url.toString());
     }
   }, [activeVideo?.id, currentEpisode?.id, currentEpisode?.seasonId, currentEpisode?.episodeNumber]);
+
+  // Update Technical Metadata when content loads
+  useEffect(() => {
+    if (currentEpisode) {
+      const isEmbed = currentEpisode.videoUrl?.includes('embed') || !currentEpisode.videoUrl;
+      const isAnime = activeVideo?.type === 'anime';
+      setVideoTechnicalMeta({
+        resolution: isEmbed ? '1920x1080' : '1280x720', // Fallback defaults
+        fps: isAnime ? 23.976 : 29.97,
+        codec: 'avc1.64002a (H.264 / AAC)',
+        bitrate: '3.4 Mbps'
+      });
+    } else {
+      setVideoTechnicalMeta(null);
+    }
+  }, [currentEpisode?.id, activeVideo?.type]);
 
   // ---------------------------------------------------------
   // WATCH PARTY SYNCHRONIZATION HELPERS & WEBSOCKET ENGINE
@@ -1031,6 +1421,32 @@ export default function App() {
     } else {
       setFavorites([...favorites, id]);
     }
+  };
+
+  const handleToggleEpisodeFavorite = (id: string) => {
+    if (episodeFavorites.includes(id)) {
+      setEpisodeFavorites(episodeFavorites.filter(eId => eId !== id));
+    } else {
+      setEpisodeFavorites([...episodeFavorites, id]);
+    }
+  };
+
+  const addToQueue = (ep: Episode) => {
+    if (playbackQueue.some(q => q.id === ep.id)) {
+      return;
+    }
+    setPlaybackQueue([...playbackQueue, ep]);
+    showSwipeMessage(lang === 'ar' ? 'تمت إضافة الحلقة للانتظار! 📺' : 'Episode added to Playback Queue! 📺');
+  };
+
+  const removeFromQueue = (epId: string) => {
+    setPlaybackQueue(playbackQueue.filter(q => q.id !== epId));
+    showSwipeMessage(lang === 'ar' ? 'تمت إزالة الحلقة من قائمة الانتظار 🗑️' : 'Removed from Playback Queue 🗑️');
+  };
+
+  const clearQueue = () => {
+    setPlaybackQueue([]);
+    showSwipeMessage(lang === 'ar' ? 'تم تفريغ قائمة التشغيل' : 'Playback Queue cleared');
   };
 
   // Submit interactive star rating of current active video
@@ -1559,7 +1975,16 @@ export default function App() {
   };
 
   const handlePlayNextEpisode = () => {
-    if (nextEpisode) {
+    if (playbackQueue.length > 0) {
+      const nextEp = playbackQueue[0];
+      setPlaybackQueue(prev => prev.slice(1));
+      setCurrentEpisode(nextEp);
+      setIsPlaying(true);
+      setVideoProgress(0);
+      setPlayerCurrentTime(0);
+      setAutoplayCancelled(false);
+      showSwipeMessage(lang === 'ar' ? 'تشغيل الحلقة من قائمة الانتظار 🎬' : 'Playing next from Queue! 🎬');
+    } else if (nextEpisode) {
       setCurrentEpisode(nextEpisode);
       setIsPlaying(true);
       setVideoProgress(0);
@@ -2067,6 +2492,19 @@ export default function App() {
                 </div>
 
                 {/* THE MOVIE / ANIME ARENA & PLAYER INTEGRATION (Durable interactive UI) */}
+                <AnimatePresence>
+                  {isTheaterMode && activeVideo && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      onClick={() => setIsTheaterMode(false)}
+                      className="fixed inset-0 bg-[#020205]/95 backdrop-blur-md z-[60] cursor-pointer"
+                      title={lang === 'ar' ? "انقر هنا لإغلاق نمط السينما" : "Click to dismiss Theater Mode"}
+                    />
+                  )}
+                </AnimatePresence>
+
                 <AnimatePresence mode="wait">
                   {activeVideo && (
                     <motion.div
@@ -2075,13 +2513,48 @@ export default function App() {
                       initial={{ opacity: 0, y: 30, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -30, scale: 0.95 }}
+                      whileHover={isGlowEnabled && !isScrolling && !isTheaterMode ? { scale: 1.01 } : { scale: 1 }}
+                      onMouseEnter={() => {
+                        if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+                        hoverTimerRef.current = setTimeout(() => {
+                          setShowArenaTooltip(true);
+                        }, 500);
+                      }}
+                      onMouseLeave={() => {
+                        if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+                        setShowArenaTooltip(false);
+                      }}
                       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                      className="grid grid-cols-1 lg:grid-cols-3 gap-8 bg-[#0F0F15]/40 p-6 md:p-8 rounded-[35px] border border-white/5 relative overflow-hidden scroll-mt-24"
+                      className={`grid grid-cols-1 ${isCinematicMode || isTheaterMode ? 'lg:grid-cols-1' : 'lg:grid-cols-3'} gap-8 p-6 md:p-8 rounded-[35px] border scroll-mt-24 transition-all duration-500 
+                        ${isTheaterMode 
+                          ? 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95vw] md:w-[90vw] max-w-7xl h-auto max-h-[90vh] z-[65] bg-[#0A0A10]/95 border-cyan-500/30 shadow-[0_0_100px_rgba(0,0,0,0.95)] overflow-y-auto backdrop-blur-3xl' 
+                          : 'bg-[#0F0F14]/65 backdrop-blur-xl border-white/10 relative overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)]'
+                        }
+                        ${isGlowEnabled ? 'glow-enabled hover:border-cyan-400/25 hover:shadow-[0_0_40px_rgba(34,211,238,0.12)]' : ''} ${isScrolling ? 'scroll-paused' : ''}`}
                     >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl" />
                     
+                    {/* Delayed hover tooltip showing current active video title */}
+                    <AnimatePresence>
+                      {showArenaTooltip && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          className="absolute top-4 right-4 z-50 bg-[#07070A]/95 border border-cyan-400/40 text-cyan-300 font-bold px-4 py-2 rounded-2xl text-[11px] md:text-xs shadow-[0_12px_24px_rgba(0,0,0,0.8)] backdrop-blur-md pointer-events-none select-none flex items-center gap-2 max-w-xs md:max-w-md"
+                        >
+                          <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                          <span className="truncate">
+                            {lang === 'ar' ? 'العرض الحالي: ' : 'Now Arena: '}
+                            {activeVideo.title[lang] || activeVideo.title.en}
+                          </span>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                    
                     {/* Interactive Simulated Streaming Player */}
-                    <div className="lg:col-span-2 flex flex-col gap-4">
+                    <div className={`${isCinematicMode || isTheaterMode ? 'lg:col-span-1' : 'lg:col-span-2'} flex flex-col gap-4`}>
                       
                       {/* --- WATCH PARTY HUD --- */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-cyan-950/20 via-purple-950/20 to-pink-950/20 p-4 rounded-3xl border border-white/5 shadow-inner">
@@ -2106,6 +2579,51 @@ export default function App() {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
+                          {/* Glow Toggle Button */}
+                          <button
+                            onClick={() => setIsGlowEnabled(!isGlowEnabled)}
+                            className={`px-3 py-1.5 rounded-xl border font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer ${isGlowEnabled ? 'bg-cyan-400/10 border-cyan-400/30 text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.15)] hover:bg-cyan-400/20' : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white'}`}
+                            title={isGlowEnabled ? "Disable Arena Glow Animation" : "Enable Arena Glow Animation"}
+                          >
+                            <Sparkles className={`w-3.5 h-3.5 ${isGlowEnabled ? 'animate-pulse text-cyan-400' : 'text-white/40'}`} />
+                            <span>{lang === 'ar' ? (isGlowEnabled ? 'إضاءة متحركة: تشغيل' : 'إضاءة متحركة: إيقاف') : (isGlowEnabled ? 'Glow: On' : 'Glow: Off')}</span>
+                          </button>
+
+                          {/* Cinematic Toggle Button */}
+                          <button
+                            onClick={() => {
+                              setIsCinematicMode(!isCinematicMode);
+                              if (isTheaterMode) setIsTheaterMode(false);
+                            }}
+                            className={`px-3 py-1.5 rounded-xl border font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer ${isCinematicMode ? 'bg-[#FF0080]/15 border-[#FF0080]/30 text-pink-300 shadow-[0_0_12px_rgba(255,0,128,0.15)] hover:bg-[#FF0080]/25' : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white'}`}
+                            title={isCinematicMode ? "Standard View Grid" : "Cinematic Mode (Full-Width)"}
+                          >
+                            {isCinematicMode ? (
+                              <>
+                                <Minimize className="w-3.5 h-3.5 text-pink-400" />
+                                <span>{lang === 'ar' ? 'عرض سينمائي: تشغيل' : 'Cinematic: On'}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Maximize className="w-3.5 h-3.5 text-white/50" />
+                                <span>{lang === 'ar' ? 'عرض سينمائي: إيقاف' : 'Cinematic: Off'}</span>
+                              </>
+                            )}
+                          </button>
+
+                          {/* Theater Mode Toggle Button */}
+                          <button
+                            onClick={() => {
+                              setIsTheaterMode(!isTheaterMode);
+                              if (isCinematicMode) setIsCinematicMode(false);
+                            }}
+                            className={`px-3 py-1.5 rounded-xl border font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer ${isTheaterMode ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.25)] hover:bg-cyan-500/30' : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white'}`}
+                            title={isTheaterMode ? "Standard View Mode" : "Theater Mode (Dark Backdrop & Centered)"}
+                          >
+                            <Film className={`w-3.5 h-3.5 ${isTheaterMode ? 'text-cyan-400 animate-pulse' : 'text-white/50'}`} />
+                            <span>{lang === 'ar' ? (isTheaterMode ? 'نمط المسرح: تشغيل' : 'نمط المسرح: إيقاف') : (isTheaterMode ? 'Theater: On' : 'Theater: Off')}</span>
+                          </button>
+
                           {/* If in a watch party */}
                           {watchPartyId ? (
                             <div className="flex flex-wrap items-center gap-2">
@@ -2194,49 +2712,209 @@ export default function App() {
                       </div>
 
                       {/* Video Container viewport */}
-                      <div className="relative aspect-video bg-black rounded-3xl overflow-hidden border border-white/10 group shadow-2xl">
-                        
-                        {/* Fallback custom visualizer with anime dynamic patterns */}
-                        {(!isPlaying || !currentEpisode) ? (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center select-none bg-gradient-to-tr from-purple-950/70 via-black to-slate-950">
-                            {/* Watermark brand */}
-                            <span className="absolute top-4 left-4 text-[10px] font-bold text-white/20 tracking-widest">KIDS STREAM 4K</span>
-                            {!activeVideo?.videoUrl && episodes.length === 0 ? (
-                               <div className="flex flex-col items-center">
-                                  <img src={activeVideo?.poster} alt="Poster" className="h-48 rounded-xl opacity-50 mb-4 object-cover" />
-                                  <span className="text-sm text-yellow-400 font-bold bg-yellow-400/10 px-4 py-2 rounded-full">
-                                    {lang === 'ar' ? 'لا يوجد سيرفر متاح بعد' : 'No server available yet'}
-                                  </span>
-                               </div>
-                            ) : (
-                               <>
-                                <div className="w-16 h-16 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 hover:scale-110 active:scale-95 transition-all cursor-pointer shadow-xl shadow-purple-500/10" onClick={handlePlayPauseToggle}>
-                                  <Play className="w-8 h-8 fill-current text-[#00F2FF] translate-x-0.5" />
-                                </div>
-                                <span className="text-xs text-white/60 mt-4 font-semibold">
-                                  {currentEpisode ? `${t('playNow')} E${currentEpisode.episodeNumber}: ${currentEpisode.title[lang] || currentEpisode.title.en}` : 'Select an Episode below'}
-                                </span>
-                               </>
-                            )}
+                      <div className="relative aspect-video">
+                        {/* Dynamic backdrop-filter & blurred ambient aura matching active poster for an ultra-immersive cinema feel */}
+                        {activeVideo?.poster && (
+                          <div 
+                            className="absolute -inset-6 md:-inset-10 saturate-[2.2] pointer-events-none select-none z-0 overflow-hidden rounded-[45px] transition-all duration-700"
+                            style={{ opacity: ambientBlurOpacity / 100 }}
+                          >
+                            {/* Blur ambient glow source */}
+                            <img 
+                              src={activeVideo.poster} 
+                              alt=""
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover scale-150 origin-center animate-pulse" 
+                              style={{ filter: `blur(${ambientBlurIntensity}px)` }}
+                            />
+                            {/* Multi-gradient color dodge mesh layer to enhance animation */}
+                            <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/10 via-transparent to-pink-500/10 mix-blend-color-dodge" />
+                            {/* Smooth glass transition vignette */}
+                            <div className="absolute inset-0 backdrop-blur-3xl bg-black/25" />
                           </div>
-                        ) : (
-                          <div className="absolute inset-0 w-full h-full bg-slate-950 flex items-center justify-center">
-                            {/* Realistic cartoon stream element with BigBuckBunny falling links */}
-                            {currentEpisode?.videoUrl?.includes('embed') ? (
-                              <iframe
-                                src={currentEpisode.videoUrl}
-                                className="w-full h-full border-0 rounded-2xl"
-                                allowFullScreen
-                                allow="autoplay; encrypted-media"
-                              />
-                            ) : (
-                              <video
-                                ref={videoRef}
-                                src={currentEpisode?.videoUrl}
-                                className="w-full h-full object-contain"
-                                autoPlay
-                                controls={false}
-                                onLoadedMetadata={() => {
+                        )}
+
+                        <div 
+                           className={`transition-all duration-300 origin-bottom-right z-50 ${isMiniPlayer ? 'fixed bottom-6 right-6 w-80 shadow-2xl rounded-2xl border-2 border-cyan-400 overflow-hidden bg-black cursor-pointer' : 'absolute inset-0 bg-black rounded-3xl overflow-hidden border border-white/10 shadow-2xl group'}`}
+                           onClick={() => {
+                             if (isMiniPlayer) {
+                               window.scrollTo({ top: 0, behavior: 'smooth' });
+                             }
+                           }}
+                           onTouchStart={handleTouchStart}
+                           onTouchMove={handleTouchMove}
+                           onTouchEnd={handleTouchEnd}
+                        >
+                          {/* Stats for Nerds floating diagnostic HUD overlay */}
+                          {showStatsForNerds && videoTechnicalMeta && (
+                            <div className="absolute top-4 left-4 z-[61] w-72 md:w-80 p-3.5 bg-black/95 backdrop-blur-md border border-[#00F2FF]/20 rounded-2xl text-[9px] font-mono text-emerald-400 text-left flex flex-col gap-2.5 shadow-[0_15px_40px_rgba(0,0,0,0.85)] pointer-events-auto select-all">
+                              <div className="flex items-center justify-between border-b border-white/15 pb-1.5 text-zinc-400 font-sans text-[10px]/none font-black tracking-widest uppercase">
+                                <span className="flex items-center gap-1.5 font-bold text-[#00F2FF]">
+                                  <Terminal className="w-3.5 h-3.5 animate-pulse" />
+                                  Vidbox Diagnostics
+                                </span>
+                                <button 
+                                  type="button" 
+                                  onClick={(e) => { e.stopPropagation(); setShowStatsForNerds(false); }}
+                                  className="text-white hover:text-red-400 transition-colors pointer-events-auto font-sans text-xs font-bold font-mono px-1 rounded bg-white/5 active:scale-90"
+                                >
+                                  ×
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[9px]">
+                                <span className="text-white/40 font-semibold font-sans">Video ID / Content:</span>
+                                <span className="text-white font-bold text-right truncate">{activeVideo?.id || 'unknown'}</span>
+
+                                <span className="text-white/40 font-semibold font-sans">Mime Type / Codec:</span>
+                                <span className="text-pink-300 font-bold text-right truncate" title={videoTechnicalMeta.codec}>{videoTechnicalMeta.codec.split(' ')[0]}</span>
+
+                                <span className="text-white/40 font-semibold font-sans">Current Resolution:</span>
+                                <span className="text-white font-bold text-right font-mono">{videoTechnicalMeta.resolution} @ {videoTechnicalMeta.fps}fps</span>
+
+                                <span className="text-white/40 font-semibold font-sans">Simulated Speed:</span>
+                                <span className="text-[#00F2FF] font-bold text-right font-mono">
+                                  {(bandwidthData[bandwidthData.length - 1] * 820).toLocaleString()} Kbps
+                                </span>
+
+                                <span className="text-white/40 font-semibold font-sans">Mirror Host / CDN:</span>
+                                <span className="text-purple-400 font-bold text-right max-w-[120px] truncate">{activeProviderId.toUpperCase()}</span>
+
+                                <span className="text-white/40 font-semibold font-sans">Buffer Ahead / Health:</span>
+                                <span className="text-emerald-400 font-bold text-right font-mono">
+                                  {isPlaying ? (10 + (Math.sin(playerCurrentTime / 10) * 3)).toFixed(1) : '12.4'}s
+                                </span>
+
+                                <span className="text-white/40 font-semibold font-sans">Dropped Frames:</span>
+                                <span className="text-emerald-400 font-bold text-right font-mono">0 / 2380</span>
+
+                                <span className="text-white/40 font-semibold font-sans">Spatial Audio Mode:</span>
+                                <span className="text-yellow-400 font-bold text-right uppercase font-bold">{spatialAudioMode}</span>
+                              </div>
+
+                              {/* Sparkline Canvas / SVG representing bandwidth burst */}
+                              <div className="flex flex-col gap-1 border-t border-white/10 pt-2 pointer-events-none">
+                                <div className="flex items-center justify-between text-[8px] text-zinc-500">
+                                  <span>BANDWIDTH GRAPH (15S BURST)</span>
+                                  <span className="text-[#00F2FF] font-semibold">{bandwidthData[bandwidthData.length - 1]} MB/s</span>
+                                </div>
+                                <div className="h-10 w-full mt-1">
+                                  <svg className="w-full h-full overflow-visible" viewBox="0 0 100 30" preserveAspectRatio="none">
+                                    <defs>
+                                      <linearGradient id="glowGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#00F2FF" stopOpacity="0.3" />
+                                        <stop offset="100%" stopColor="#00F2FF" stopOpacity="0.0" />
+                                      </linearGradient>
+                                    </defs>
+                                    {(() => {
+                                      const min = Math.min(...bandwidthData);
+                                      const max = Math.max(...bandwidthData);
+                                      const range = max - min || 1;
+                                      const points = bandwidthData.map((val, i) => {
+                                        const x = (i / (bandwidthData.length - 1)) * 100;
+                                        const y = 30 - (((val - min) / range) * 20 + 5);
+                                        return `${x},${y}`;
+                                      }).join(' ');
+
+                                      const areaPoints = `0,30 ${points} 100,30`;
+
+                                      return (
+                                        <>
+                                          <polygon points={areaPoints} fill="url(#glowGrad)" />
+                                          <polyline
+                                            fill="none"
+                                            stroke="#00F2FF"
+                                            strokeWidth="1.2"
+                                            points={points}
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                          />
+                                          {bandwidthData.length > 0 && (
+                                            <circle
+                                              cx="100"
+                                              cy={30 - (((bandwidthData[bandwidthData.length - 1] - min) / range) * 20 + 5)}
+                                              r="2"
+                                              fill="#FF0080"
+                                            />
+                                          )}
+                                        </>
+                                      );
+                                    })()}
+                                  </svg>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Lock indicator display */}
+                          {isPlayerLocked && (
+                            <div className="absolute top-4 right-4 z-[61] bg-black/80 border border-red-500/30 p-2 rounded-xl text-red-400 font-bold uppercase tracking-wider text-[9px] flex items-center gap-1.5 pointer-events-none shadow-[0_0_15px_rgba(239,68,68,0.3)] select-none">
+                              <Lock className="w-3.5 h-3.5 animate-pulse text-red-500" />
+                              <span>{lang === 'ar' ? 'أزرار مغلَقة' : 'Controls Locked [L]'}</span>
+                            </div>
+                          )}
+
+                          {/* Swipe Gesture Toast */}
+                          {showSwipeToast.visible && (
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/70 backdrop-blur-md px-6 py-4 rounded-3xl z-[100] flex items-center justify-center animate-fade-in pointer-events-none shadow-[0_0_30px_rgba(34,211,238,0.3)] border border-cyan-400/30">
+                              <span className="text-white font-black text-2xl tracking-widest">{showSwipeToast.message}</span>
+                            </div>
+                          )}
+
+                          {/* Miniplayer close button */}
+                          {isMiniPlayer && (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setIsPlaying(false); setIsMiniPlayer(false); setActiveVideo(null); }} 
+                              className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-2 hover:bg-red-500 z-[60]"
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          )}
+                          
+                          {/* Fallback custom visualizer with anime dynamic patterns */}
+                          {(!isPlaying || !currentEpisode) ? (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center select-none bg-gradient-to-tr from-purple-950/70 via-black to-slate-950">
+                              {/* Watermark brand */}
+                              <span className="absolute top-4 left-4 text-[10px] font-bold text-white/20 tracking-widest">KIDS STREAM 4K</span>
+                              {!activeVideo?.videoUrl && episodes.length === 0 ? (
+                                 <div className="flex flex-col items-center">
+                                    <img src={activeVideo?.poster} alt="Poster" className="h-48 rounded-xl opacity-50 mb-4 object-cover" />
+                                    <span className="text-sm text-yellow-400 font-bold bg-yellow-400/10 px-4 py-2 rounded-full">
+                                      {lang === 'ar' ? 'لا يوجد سيرفر متاح بعد' : 'No server available yet'}
+                                    </span>
+                                 </div>
+                              ) : (
+                                 <>
+                                  <div className="w-16 h-16 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 hover:scale-110 active:scale-95 transition-all cursor-pointer shadow-xl shadow-purple-500/10" onClick={handlePlayPauseToggle}>
+                                    <Play className="w-8 h-8 fill-current text-[#00F2FF] translate-x-0.5" />
+                                  </div>
+                                  <span className="text-xs text-white/60 mt-4 font-semibold">
+                                    {currentEpisode ? `${t('playNow')} E${currentEpisode.episodeNumber}: ${currentEpisode.title[lang] || currentEpisode.title.en}` : 'Select an Episode below'}
+                                  </span>
+                                 </>
+                              )}
+                            </div>
+                          ) : (
+                            <div 
+                              className="absolute inset-0 w-full h-full bg-slate-950 flex items-center justify-center"
+                              style={{ filter: `brightness(${videoBrightness}%)` }}
+                            >
+                              {/* Realistic cartoon stream element with BigBuckBunny falling links */}
+                              {currentEpisode?.videoUrl?.includes('embed') ? (
+                                <iframe
+                                  src={currentEpisode.videoUrl}
+                                  className={`w-full h-full border-0 ${isMiniPlayer ? 'rounded-2xl pointer-events-none' : 'rounded-3xl'}`}
+                                  allowFullScreen
+                                  allow="autoplay; encrypted-media"
+                                />
+                              ) : (
+                                <video
+                                  ref={videoRef}
+                                  src={currentEpisode?.videoUrl}
+                                  className="w-full h-full object-contain pointer-events-none"
+                                  autoPlay
+                                  controls={false}
+                                  onLoadedMetadata={() => {
                                 if (videoRef.current) {
                                   // Restore playback rate speed
                                   videoRef.current.playbackRate = playerSpeed;
@@ -2246,6 +2924,27 @@ export default function App() {
                                     const restoreTime = (videoProgress / 100) * videoRef.current.duration;
                                     videoRef.current.currentTime = restoreTime || 0;
                                   }
+                                  
+                                  const w = videoRef.current.videoWidth || 1920;
+                                  const h = videoRef.current.videoHeight || 1080;
+                                  const isAnime = activeVideo?.type === 'anime';
+                                  const fps = isAnime ? 23.976 : 29.97;
+                                  let codec = 'avc1.64002a (H.264 / AAC)';
+                                  if (currentEpisode?.videoUrl?.includes('.webm')) {
+                                    codec = 'vp09.00.51.08 (VP9) / opus (Opus)';
+                                  }
+                                  let bitrate = '3.4 Mbps';
+                                  if (w >= 3840) bitrate = '15.4 Mbps';
+                                  else if (w >= 1920) bitrate = '6.2 Mbps';
+                                  else if (w >= 1280) bitrate = '2.8 Mbps';
+                                  else bitrate = '1.2 Mbps';
+
+                                  setVideoTechnicalMeta({
+                                    resolution: `${w}x${h}`,
+                                    fps,
+                                    codec,
+                                    bitrate
+                                  });
                                   
                                   setPlayerDuration(videoRef.current.duration || 0);
                                   setPlayerCurrentTime(videoRef.current.currentTime || 0);
@@ -2260,14 +2959,14 @@ export default function App() {
                                   const pct = (ct / dur) * 100;
                                   setVideoProgress(Math.min(pct || 0, 100));
 
-                                  // Auto-play trigger: when reaching the very end and nextEpisode is present
-                                  if (dur > 0 && ct >= dur - 0.5 && nextEpisode && !autoplayCancelled) {
+                                  // Auto-play trigger: when reaching the very end and nextUpEpisode is present
+                                  if (dur > 0 && ct >= dur - 0.5 && nextUpEpisode && !autoplayCancelled) {
                                     handlePlayNextEpisode();
                                   }
                                 }
                               }}
                               onEnded={() => {
-                                if (nextEpisode && !autoplayCancelled) {
+                                if (nextUpEpisode && !autoplayCancelled) {
                                   handlePlayNextEpisode();
                                 } else {
                                   setIsPlaying(false);
@@ -2297,7 +2996,7 @@ export default function App() {
                             )}
 
                             {/* Next Episode Autoplay Countdown Timer overlay */}
-                            {nextEpisode && playerDuration > 0 && (playerDuration - playerCurrentTime) <= 10 && !autoplayCancelled && (
+                            {nextUpEpisode && playerDuration > 0 && (playerDuration - playerCurrentTime) <= 10 && !autoplayCancelled && (
                               <div className="absolute bottom-20 right-4 z-40 bg-[#0F0F15]/95 backdrop-blur-md border border-cyan-400/40 p-4 rounded-3xl flex flex-col gap-3 shadow-[0_10px_30px_rgba(0,242,255,0.15)] max-w-xs animate-fade-in text-left">
                                 <span className="text-[10px] text-cyan-400 font-extrabold tracking-widest uppercase">
                                   {lang === 'ar' ? "الحلقة القادمة تبدأ في" : "Next Episode In"}
@@ -2309,10 +3008,10 @@ export default function App() {
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <h4 className="text-xs font-black text-white truncate">
-                                      {nextEpisode.title[lang] || nextEpisode.title.en}
+                                      {nextUpEpisode.title[lang] || nextUpEpisode.title.en}
                                     </h4>
                                     <span className="text-[9px] text-white/50 font-mono">
-                                      {lang === 'ar' ? `حلقة رقم ${nextEpisode.episodeNumber}` : `Episode ${nextEpisode.episodeNumber}`}
+                                      {lang === 'ar' ? `حلقة رقم ${nextUpEpisode.episodeNumber}` : `Episode ${nextUpEpisode.episodeNumber}`}
                                     </span>
                                   </div>
                                 </div>
@@ -2356,12 +3055,33 @@ export default function App() {
 
                         {/* Interactive Player Controls overlay hud */}
                         {!(currentEpisode?.videoUrl?.includes('embed')) && (
-                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black via-black/80 to-transparent p-4 flex flex-col gap-3 group-hover:opacity-100 transition-opacity duration-300">
+                          <div className="absolute bottom-4 left-4 right-4 bg-black/60 backdrop-blur-xl border border-white/10 p-4 rounded-3xl flex flex-col gap-3 opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-40 hover:opacity-100">
                           
                           {/* Seek bar */}
                           <div 
                             className="w-full h-1.5 bg-white/20 rounded-full cursor-pointer relative"
                             onClick={handleProgressClick}
+                            onMouseMove={(e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              const x = e.clientX - rect.left;
+                              const percentage = x / rect.width;
+                              setHoverX(x);
+                              
+                              let dur = playerDuration;
+                              if (videoRef.current && videoRef.current.duration) {
+                                dur = videoRef.current.duration;
+                              }
+                              
+                              if (dur) {
+                                setHoveredTime(percentage * dur);
+                              } else {
+                                setHoveredTime(percentage * 1200); // 20 mins fallback
+                              }
+                            }}
+                            onMouseLeave={() => {
+                              setHoveredTime(null);
+                              setHoverX(null);
+                            }}
                           >
                             <div 
                               className="h-full bg-gradient-to-r from-cyan-400 to-[#FF0080] rounded-full relative"
@@ -2369,6 +3089,85 @@ export default function App() {
                             >
                               <div className="absolute -right-1 -top-1 w-3.5 h-3.5 bg-white rounded-full shadow border-2 border-[#FF0080]" />
                             </div>
+
+                            {/* Floating Thumbnail Preview */}
+                            {hoveredTime !== null && hoverX !== null && (
+                              <div 
+                                className="absolute bottom-5 z-50 p-1 bg-[#0F0F15] border-2 border-[#FF0080] rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] flex flex-col items-center gap-1 pointer-events-none"
+                                style={{
+                                  left: `${hoverX}px`,
+                                  transform: 'translateX(-50%)',
+                                }}
+                              >
+                                <div className="w-[140px] h-[78px] bg-black rounded-lg overflow-hidden relative">
+                                  {currentEpisode?.videoUrl ? (
+                                    <video 
+                                      ref={previewVideoRef}
+                                      src={currentEpisode.videoUrl}
+                                      muted
+                                      playsInline
+                                      className="absolute inset-0 w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-zinc-900 text-[10px] text-white/50">
+                                      No preview
+                                    </div>
+                                  )}
+                                  
+                                  {/* Absolute timestamp label overlay */}
+                                  <div className="absolute bottom-1 right-1 bg-black/80 px-1.5 py-0.5 rounded font-mono text-[9px] text-white font-bold border border-white/10">
+                                    {(() => {
+                                      const m = Math.floor(hoveredTime / 60);
+                                      const s = Math.floor(hoveredTime % 60);
+                                      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                                    })()}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Render small tick marks for Bookmarks / Chapter markers */}
+                            {bookmarks.map((b) => {
+                              const realPct = playerDuration > 0 ? (b.time / playerDuration) * 100 : 0;
+                              if (realPct < 0 || realPct > 100) return null;
+                              return (
+                                <div
+                                  key={b.id}
+                                  className="absolute top-0 w-1.5 h-1.5 bg-cyan-300 rounded-full border border-black/65 hover:bg-yellow-300 transition-all hover:scale-150 z-20 group/tick cursor-pointer"
+                                  style={{ left: `${realPct}%`, transform: 'translateX(-50%)' }}
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // Prevent normal timeline click
+                                    if (videoRef.current) {
+                                      videoRef.current.currentTime = b.time;
+                                      setVideoProgress(realPct);
+                                      setPlayerCurrentTime(b.time);
+                                    }
+                                  }}
+                                >
+                                  {/* Custom Tooltip on Hover */}
+                                  <div className="absolute bottom-5 left-1/2 -translate-x-1/2 bg-black/95 text-[10px] text-white font-black px-2.5 py-1.5 rounded-xl border border-cyan-400/50 shadow-[0_4px_20px_rgba(0,0,0,0.8)] opacity-0 pointer-events-none group-hover/tick:opacity-100 transition-all duration-200 whitespace-nowrap flex items-center gap-1.5 z-[75]">
+                                    <Tag className="w-3 h-3 text-cyan-400 animate-pulse" />
+                                    <span>{b.title}</span>
+                                    <span className="text-zinc-400 font-mono font-normal">({formatMinSec(b.time)})</span>
+                                    
+                                    {/* Delete icon/button for custom bookmarks */}
+                                    {!(b.id.startsWith('def')) && (
+                                      <button
+                                        type="button"
+                                        className="ml-1 text-red-400 hover:text-red-300 pointer-events-auto transition-colors font-bold text-xs"
+                                        title={lang === 'ar' ? "حذف العلامة" : "Delete chapter marker"}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteBookmark(b.id);
+                                        }}
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
 
                           <div className="flex items-center justify-between">
@@ -2391,6 +3190,58 @@ export default function App() {
                               <span className="text-[10px] text-white/40 font-bold">
                                 {currentEpisode ? `E${currentEpisode.episodeNumber} • ${Math.round(videoProgress)}% completed` : 'No file loaded'}
                               </span>
+
+                              {/* Interactive Chapter Bookmark Addition Bar */}
+                              {currentEpisode && (
+                                <div className="flex items-center gap-2 border-l border-white/10 pl-3">
+                                  {showAddBookmark ? (
+                                    <div className="flex items-center gap-1.5 animate-fadeIn">
+                                      <input
+                                        type="text"
+                                        placeholder={lang === 'ar' ? "عنوان الفصل..." : "Chapter title..."}
+                                        value={newBookmarkTitle}
+                                        onChange={(e) => setNewBookmarkTitle(e.target.value)}
+                                        className="bg-black/85 text-[10px] text-white px-2.5 py-1 rounded-lg border border-cyan-400/50 w-32 placeholder:text-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/30"
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') handleAddBookmark(newBookmarkTitle);
+                                          if (e.key === 'Escape') {
+                                            setShowAddBookmark(false);
+                                            setNewBookmarkTitle('');
+                                          }
+                                        }}
+                                        autoFocus
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAddBookmark(newBookmarkTitle)}
+                                        className="bg-cyan-500 hover:bg-cyan-400 text-black px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-colors"
+                                      >
+                                        {lang === 'ar' ? "إضافة" : "Add"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setShowAddBookmark(false);
+                                          setNewBookmarkTitle('');
+                                        }}
+                                        className="text-white/40 hover:text-white px-1.5 py-1 text-sm font-bold transition-colors"
+                                      >
+                                        ×
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowAddBookmark(true)}
+                                      className="text-[10px] text-white/50 hover:text-cyan-400 font-extrabold flex items-center gap-1.5 transition-all bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-full cursor-pointer"
+                                      title={lang === 'ar' ? "إضافة فصل أو علامة زمنية" : "Add chapter / bookmark at current time"}
+                                    >
+                                      <Bookmark className="w-3 h-3 text-[#FF0080]" />
+                                      <span>{lang === 'ar' ? "علامة فصل" : "+ Chapter"}</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
 
                             <div className="flex items-center gap-3">
@@ -2482,18 +3333,437 @@ export default function App() {
                               >
                                 <Tv className="w-3.5 h-3.5" />
                               </button>
+
+                              {/* Stats for Nerds Toggle */}
+                              <button 
+                                onClick={() => setShowStatsForNerds(!showStatsForNerds)} 
+                                className={`p-1 rounded transition-colors ${showStatsForNerds ? 'bg-emerald-500 text-black shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'hover:bg-white/10 text-white'}`}
+                                title={lang === 'ar' ? "إحصائيات المطورين [N]" : "Stats for Nerds [N]"}
+                              >
+                                <Terminal className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Keyboard Shortcuts Reference Toggle */}
+                              <button 
+                                onClick={() => setShowHotkeysModal(!showHotkeysModal)} 
+                                className={`p-1 rounded transition-colors hover:bg-white/10 text-white`}
+                                title={lang === 'ar' ? "اختصارات لوحة المفاتيح [H]" : "Keyboard Shortcuts [H]"}
+                              >
+                                <Keyboard className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Control Lock Button */}
+                              <button 
+                                onClick={() => {
+                                  setIsPlayerLocked(!isPlayerLocked);
+                                  showSwipeMessage(lang === 'ar' ? (!isPlayerLocked ? '🔒 تم قفل أزرار التحكم' : '🔓 تم إلغاء القفل') : (!isPlayerLocked ? '🔒 Player Controls Locked' : '🔓 Player Controls Unlocked'));
+                                }} 
+                                className={`p-1 rounded transition-colors ${isPlayerLocked ? 'bg-red-500 text-white hover:bg-red-600' : 'hover:bg-white/10 text-white'}`}
+                                title={lang === 'ar' ? "قفل التحكم لوحة [L]" : "Lock Interface Controls [L]"}
+                              >
+                                {isPlayerLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                              </button>
+
+                              {/* Theater Mode Action Button */}
+                              <button 
+                                onClick={() => {
+                                  setIsTheaterMode(!isTheaterMode);
+                                  if (isCinematicMode) setIsCinematicMode(false);
+                                }} 
+                                className={`p-1 rounded transition-colors ${isTheaterMode ? 'bg-cyan-400 text-black shadow-[0_0_8px_rgba(34,211,238,0.4)]' : 'hover:bg-white/10 text-white'}`}
+                                title={lang === 'ar' ? "نمط المسرح" : "Theater Mode"}
+                              >
+                                <Film className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Settings Popover Button */}
+                              <div className="relative">
+                                <button
+                                  onClick={() => setShowSettingsPopover(!showSettingsPopover)}
+                                  className={`p-1 rounded transition-colors ${showSettingsPopover ? 'bg-[#FF0080] text-white' : 'hover:bg-white/10 text-white'}`}
+                                  title={lang === 'ar' ? "الإعدادات" : "Play Settings"}
+                                >
+                                  <Settings className="w-3.5 h-3.5" />
+                                </button>
+
+                                <AnimatePresence>
+                                  {showSettingsPopover && (
+                                    <motion.div
+                                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                      transition={{ duration: 0.2 }}
+                                      className="absolute bottom-8 right-0 z-[70] w-64 p-4 rounded-2xl bg-[#0F0F15]/95 backdrop-blur-md border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex flex-col gap-3 font-sans text-xs text-white"
+                                    >
+                                      {/* Header */}
+                                      <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                                        <span className="font-bold text-cyan-400 flex items-center gap-1">
+                                          <Settings className="w-3.5 h-3.5" />
+                                          {lang === 'ar' ? 'إعدادات التشغيل' : 'Playback Settings'}
+                                        </span>
+                                        <button 
+                                          onClick={() => setShowSettingsPopover(false)}
+                                          className="text-white/40 hover:text-white"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+
+                                      {/* Playback speed */}
+                                      <div className="flex flex-col gap-1.5 align-start text-left">
+                                        <span className="text-[10px] text-white/50 uppercase font-bold tracking-wider">
+                                          {lang === 'ar' ? 'سرعة التشغيل' : 'Playback Speed'}
+                                        </span>
+                                        <div className="grid grid-cols-5 gap-1">
+                                          {[0.5, 1.0, 1.25, 1.5, 2.0].map((speed) => (
+                                            <button
+                                              key={speed}
+                                              onClick={() => {
+                                                setPlayerSpeed(speed);
+                                                if (videoRef.current) videoRef.current.playbackRate = speed;
+                                              }}
+                                              className={`py-1 rounded font-mono text-[10px] text-center transition-all ${
+                                                Math.abs(playerSpeed - speed) < 0.05
+                                                  ? 'bg-[#FF0080] text-white font-extrabold'
+                                                  : 'bg-white/5 hover:bg-white/10 text-white/75'
+                                              }`}
+                                            >
+                                              {speed}x
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      {/* Quality Preferences */}
+                                      <div className="flex flex-col gap-1.5 align-start text-left">
+                                        <span className="text-[10px] text-white/50 uppercase font-bold tracking-wider">
+                                          {lang === 'ar' ? 'الجودة' : 'Video Quality'}
+                                        </span>
+                                        <div className="grid grid-cols-4 gap-1">
+                                          {[
+                                            { label: '480p', val: '480p' },
+                                            { label: '720p', val: '720p' },
+                                            { label: '1080p', val: '1080p' },
+                                            { label: '4K', val: '4k' }
+                                          ].map((qual) => (
+                                            <button
+                                              key={qual.val}
+                                              onClick={() => setPlayerQuality(qual.val)}
+                                              className={`py-1 rounded text-[10px] text-center transition-all ${
+                                                playerQuality === qual.val
+                                                  ? 'bg-cyan-500 text-black font-extrabold'
+                                                  : 'bg-white/5 hover:bg-white/10 text-white/75'
+                                              }`}
+                                            >
+                                              {qual.label}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      {/* Subtitles Option */}
+                                      <div className="flex flex-col gap-1.5 align-start text-left">
+                                        <span className="text-[10px] text-white/50 uppercase font-bold tracking-wider">
+                                          {lang === 'ar' ? 'الترجمة المصاحبة' : 'Subtitles / CC'}
+                                        </span>
+                                        <div className="flex flex-wrap gap-1">
+                                          <button
+                                            onClick={() => setSelectedSubtitle('none')}
+                                            className={`px-2.5 py-1 rounded text-[10px] transition-all ${
+                                              selectedSubtitle === 'none'
+                                                ? 'bg-purple-500 text-white font-extrabold'
+                                                : 'bg-white/5 hover:bg-white/10 text-white/75'
+                                            }`}
+                                          >
+                                            {lang === 'ar' ? 'إيقاف' : 'Off'}
+                                          </button>
+                                          {activeVideo?.languageOptions?.subtitled?.map((sub) => (
+                                            <button
+                                              key={sub}
+                                              onClick={() => setSelectedSubtitle(sub)}
+                                              className={`px-2.5 py-1 rounded text-[10px] uppercase transition-all ${
+                                                selectedSubtitle === sub
+                                                  ? 'bg-purple-500 text-white font-extrabold'
+                                                  : 'bg-white/5 hover:bg-white/10 text-white/75'
+                                              }`}
+                                            >
+                                              {sub}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      {/* Ambient Glow Aura Customizer */}
+                                      <div className="flex flex-col gap-2 align-start text-left border-t border-white/10 pt-2">
+                                        <span className="text-[10px] text-pink-400 uppercase font-bold tracking-wider flex items-center gap-1">
+                                          <Sparkles className="w-3.5 h-3.5" />
+                                          {lang === 'ar' ? 'تخصيص الهالة الخلفية' : 'Ambient glow overlay'}
+                                        </span>
+                                        <div className="flex flex-col gap-1.5 text-[9px] text-white/70">
+                                          <div className="flex items-center justify-between">
+                                            <span>{lang === 'ar' ? 'الشفافية:' : 'Glow Opacity:'}</span>
+                                            <span className="font-mono font-bold text-pink-300">{ambientBlurOpacity}%</span>
+                                          </div>
+                                          <input 
+                                            type="range" 
+                                            min="0" 
+                                            max="100" 
+                                            value={ambientBlurOpacity} 
+                                            onChange={(e) => setAmbientBlurOpacity(Number(e.target.value))}
+                                            className="w-full accent-pink-500 bg-white/10 h-1 rounded cursor-pointer"
+                                          />
+
+                                          <div className="flex items-center justify-between mt-1">
+                                            <span>{lang === 'ar' ? 'قوة التمويه:' : 'Glow Softness:'}</span>
+                                            <span className="font-mono font-bold text-pink-300">{ambientBlurIntensity}px</span>
+                                          </div>
+                                          <input 
+                                            type="range" 
+                                            min="20" 
+                                            max="150" 
+                                            value={ambientBlurIntensity} 
+                                            onChange={(e) => setAmbientBlurIntensity(Number(e.target.value))}
+                                            className="w-full accent-pink-500 bg-white/10 h-1 rounded cursor-pointer"
+                                          />
+                                        </div>
+                                      </div>
+
+                                      {/* Brightness Control slider */}
+                                      <div className="flex flex-col gap-2 align-start text-left border-t border-white/10 pt-2">
+                                        <span className="text-[10px] text-yellow-400 uppercase font-bold tracking-wider flex items-center gap-1">
+                                          <Sun className="w-3.5 h-3.5" />
+                                          {lang === 'ar' ? 'تحكم في السطوع' : 'Brightness Control'}
+                                        </span>
+                                        <div className="flex flex-col gap-1.5 text-[9px] text-white/70">
+                                          <div className="flex items-center justify-between">
+                                            <span>{lang === 'ar' ? 'مستوى السطوع:' : 'Level:'}</span>
+                                            <span className="font-mono font-bold text-yellow-300">{videoBrightness}%</span>
+                                          </div>
+                                          <input 
+                                            type="range" 
+                                            min="30" 
+                                            max="170" 
+                                            value={videoBrightness} 
+                                            onChange={(e) => setVideoBrightness(Number(e.target.value))}
+                                            className="w-full accent-yellow-400 bg-white/10 h-1 rounded cursor-pointer"
+                                            title={lang === 'ar' ? 'مستوى السطوع' : 'Brightness level'}
+                                          />
+                                        </div>
+                                      </div>
+
+                                      {/* Simulated Audiospatial Filters */}
+                                      <div className="flex flex-col gap-1.5 align-start text-left border-t border-white/10 pt-2">
+                                        <span className="text-[10px] text-cyan-400 uppercase font-bold tracking-wider flex items-center gap-1">
+                                          <AudioLines className="w-3.5 h-3.5" />
+                                          {lang === 'ar' ? 'محاكي الصوت المحيطي' : 'Spatial acoustics EQ'}
+                                        </span>
+                                        <div className="grid grid-cols-4 gap-1 text-[9px]">
+                                          {[
+                                            { label: 'Bypass', val: 'off' },
+                                            { label: 'Bass', val: 'boost' },
+                                            { label: 'Theater', val: 'theater' },
+                                            { label: 'Vocals', val: 'vocals' }
+                                          ].map((mode) => (
+                                            <button
+                                              key={mode.val}
+                                              onClick={() => {
+                                                setSpatialAudioMode(mode.val as any);
+                                                showSwipeMessage(lang === 'ar' ? `الصوت المحيطي: ${mode.label}` : `Spatial Audio Profile: ${mode.label}`);
+                                              }}
+                                              className={`py-1 px-1 rounded text-[8px] truncate text-center font-bold transition-all ${
+                                                spatialAudioMode === mode.val
+                                                  ? 'bg-cyan-500 text-black font-extrabold'
+                                                  : 'bg-white/5 hover:bg-white/10 text-white/70'
+                                              }`}
+                                            >
+                                              {mode.label}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      {/* Technical Stats Section */}
+                                      <div className="flex flex-col gap-1.5 border-t border-white/10 pt-2.5 items-start text-left">
+                                        <span className="text-[10px] text-cyan-400 uppercase font-black tracking-wider flex items-center gap-1">
+                                          <Info className="w-3 h-3" />
+                                          {lang === 'ar' ? 'البيانات الفنية للبث' : 'Technical Metadata'}
+                                        </span>
+                                        {videoTechnicalMeta ? (
+                                          <div className="w-full bg-black/40 rounded-xl p-2.5 border border-white/5 flex flex-col gap-1 font-mono text-[9px] text-white/70">
+                                            <div className="flex justify-between gap-4">
+                                              <span>{lang === 'ar' ? 'الأبعاد:' : 'Resolution:'}</span>
+                                              <span className="text-white font-bold">{videoTechnicalMeta.resolution}</span>
+                                            </div>
+                                            <div className="flex justify-between gap-4">
+                                              <span>{lang === 'ar' ? 'الإطارات:' : 'Frame Rate:'}</span>
+                                              <span className="text-white font-bold">{videoTechnicalMeta.fps} fps</span>
+                                            </div>
+                                            <div className="flex justify-between gap-4">
+                                              <span>{lang === 'ar' ? 'الترميز:' : 'Codec:'}</span>
+                                              <span className="text-white font-bold truncate max-w-[110px]" title={videoTechnicalMeta.codec}>{videoTechnicalMeta.codec}</span>
+                                            </div>
+                                            <div className="flex justify-between gap-4">
+                                              <span>{lang === 'ar' ? 'معدل البت:' : 'Bitrate:'}</span>
+                                              <span className="text-cyan-300 font-bold">{videoTechnicalMeta.bitrate}</span>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <span className="text-[10px] text-white/40 italic">
+                                            {lang === 'ar' ? 'جاري تحميل البيانات...' : 'Loading media specs...'}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
                             </div>
                           </div>
                         </div>
                         )}
+                        </div>
                       </div>
+                      
+                      {/* 📡 STREAM METRICS & PROVIDER STATUS (VIDBOX STYLE) */}
+                      {currentEpisode && (
+                        <div className="bg-[#0A0A10]/90 backdrop-blur-strong border border-cyan-500/15 p-5 md:p-6 rounded-[30px] flex flex-col gap-5 text-left font-sans transition-all duration-300 shadow-[0_15px_40px_rgba(0,0,0,0.6)]">
+                          {/* Header section with ping action */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-4">
+                            <div>
+                              <div className="flex items-center gap-2.5">
+                                <span className="flex h-2.5 w-2.5 relative">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00F2FF] opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-400"></span>
+                                </span>
+                                <h4 className="text-sm font-black uppercase tracking-wider text-[#00F2FF] flex items-center gap-2">
+                                  <span>{lang === 'ar' ? 'بوابات البث ومزودي الخدمة' : '📡 Connected Video Providers & Mirrors'}</span>
+                                </h4>
+                              </div>
+                              <p className="text-[11px] text-white/50 mt-1">
+                                {lang === 'ar' 
+                                  ? 'تغيير خادم البث لمعالجة انقطاع الاتصال ومراقبة الاستجابة وسرعة التحميل' 
+                                  : 'Switch streaming server to resolve buffers, test response delay, and toggle proxy lanes'}
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={runProviderPingTest}
+                              disabled={isPinging}
+                              className={`text-[10px] font-black uppercase tracking-wider px-3.5 py-2 rounded-xl border transition-all duration-300 flex items-center gap-1.5 ${
+                                isPinging 
+                                  ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 animate-pulse' 
+                                  : 'bg-white/5 border-white/10 text-white hover:border-[#FF0080]/60 hover:text-[#FF0080]'
+                              }`}
+                            >
+                              <FastForward className={`w-3 h-3 ${isPinging ? 'animate-spin' : ''}`} />
+                              <span>{isPinging ? (lang === 'ar' ? 'جاري الفحص...' : 'Testing...') : (lang === 'ar' ? 'فحص البنج العالمي' : 'Validate Pings')}</span>
+                            </button>
+                          </div>
+
+                          {/* Grid of providers as seen in vidbox.dev */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+                            {[
+                              { id: 'vidbox-ultra', nameEn: 'Vidbox Premium [HLS]', nameAr: 'سيرفر ويدبوكس فائق الجودة', tagline: 'Primary edge delivery node', quality: '4K Stream', speed: '124 MB/s', type: 'M3U8', ssl: true, subs: true, status: 'online' },
+                              { id: 'hls-cyber', nameEn: 'CyberCloud VIP Mirror', nameAr: 'مسار الغيمة السيبرانية الرقمية', tagline: 'Optimized high-bitrate pipeline', quality: '1080p Ultra', speed: '98 MB/s', type: 'MP4 Live', ssl: true, subs: true, status: 'online' },
+                              { id: 'vidsrc-embed', nameEn: 'Superembed Hybrid CDN', nameAr: 'بوابة الدمج الخارقة الذكية', tagline: 'Decentralized caching network', quality: '1080p HDR', speed: '85 MB/s', type: 'Adaptive', ssl: true, subs: false, status: 'online' },
+                              { id: 'super-fast', nameEn: 'Direct Transcode Core', nameAr: 'نواة المعالجة المباشرة والترجمة', tagline: 'High-speed local network layer', quality: '1080p Web', speed: '115 MB/s', type: 'TS Stream', ssl: true, subs: true, status: 'online' },
+                              { id: 'backup-slow', nameEn: 'Community Share Proxy', nameAr: 'بروكسي البث التعاوني الاحتياطي', tagline: 'Secondary fallback relay server', quality: '720p Std', speed: '24 MB/s', type: 'HTTP Web', ssl: false, subs: true, status: 'slow' }
+                            ].map((p) => {
+                              const isActive = activeProviderId === p.id;
+                              const latency = providerPings[p.id] || 999;
+                              const isFast = latency < 40;
+                              const isMedium = latency >= 40 && latency < 100;
+
+                              return (
+                                <div
+                                  key={p.id}
+                                  onClick={() => handleSelectProvider(p.id, p.nameEn)}
+                                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all duration-300 relative select-none flex flex-col justify-between gap-3 text-left ${
+                                    isActive 
+                                      ? 'bg-gradient-to-br from-cyan-950/40 to-black border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.15)] scale-[1.02]' 
+                                      : 'bg-[#12121A]/50 border-white/5 hover:border-white/20 hover:bg-[#12121A]/80'
+                                  }`}
+                                >
+                                  {/* Badge & latency */}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className={`h-1.5 w-1.5 rounded-full ${p.status === 'online' ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
+                                    
+                                    <div className="flex items-center gap-1.5">
+                                      <span className={`text-[10px] font-black font-mono tracking-tighter ${isFast ? 'text-emerald-400' : isMedium ? 'text-cyan-400' : 'text-amber-500'}`}>
+                                        ⚡ {latency}ms
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Server name */}
+                                  <div>
+                                    <h5 className="text-[11px] font-black font-sans text-white uppercase tracking-wide leading-tight group-hover:text-cyan-300">
+                                      {lang === 'ar' ? p.nameAr : p.nameEn}
+                                    </h5>
+                                    <p className="text-[9px] text-white/40 mt-1 line-clamp-1">{p.tagline}</p>
+                                  </div>
+
+                                  {/* Metrics parameters */}
+                                  <div className="flex items-center justify-between gap-1 border-t border-white/5 pt-2 text-[9px]">
+                                    <div className="flex items-center gap-1">
+                                      <span className="bg-white/5 px-1 py-0.5 rounded text-white/60 font-mono font-bold">{p.quality}</span>
+                                      <span className="bg-white/5 px-1 py-0.5 rounded text-cyan-300 font-mono">{p.speed}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 text-[10px]/none">
+                                      {p.ssl && <span title="SSL Secure Connection">🔒</span>}
+                                      {p.subs && <span title="Softcoded Subtitles Embedded">💬</span>}
+                                    </div>
+                                  </div>
+
+                                  {/* Connected indicator tag */}
+                                  {isActive && (
+                                    <div className="absolute top-2 right-2 bg-gradient-to-r from-cyan-500 to-[#FF0080] text-black text-[7px] font-black uppercase tracking-wider px-1 rounded">
+                                      {lang === 'ar' ? 'نشط' : 'ACTIVE'}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Connection Logs Panel / Terminal */}
+                          <div className="bg-black/95 rounded-2xl border border-white/10 p-3.5 flex flex-col gap-2">
+                            <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                              <span className="text-[10px] text-zinc-400 font-black tracking-widest uppercase font-mono flex items-center gap-1.5">
+                                <span className="flex h-1.5 w-1.5 rounded-full bg-red-500"></span>
+                                <span className="flex h-1.5 w-1.5 rounded-full bg-yellow-500"></span>
+                                <span className="flex h-1.5 w-1.5 rounded-full bg-green-500"></span>
+                                <span className="ml-1">{lang === 'ar' ? 'منصة فحص أداء المزود وتفاصيل التجزئة' : '🖥️ Vidbox Core Dev Logs & Streaming Chunk Engine'}</span>
+                              </span>
+                              
+                              <span className="text-[9px] text-cyan-400 font-mono">
+                                HLS.js 1.4.15 • {activeProviderId.toUpperCase()}
+                              </span>
+                            </div>
+
+                            <div className="h-[90px] overflow-y-auto font-mono text-[9px] text-emerald-400 flex flex-col gap-1 text-left custom-scrollbar leading-relaxed">
+                              {activeLogs.map((log, idx) => (
+                                <div key={idx} className="hover:bg-white/5 px-1 rounded transition-colors">{log}</div>
+                              ))}
+                              {isPinging && (
+                                <div className="text-cyan-400 animate-pulse">{"[>>>] ICMP pinging all nodes to optimize content packet loss buffers..."}</div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Download and Offline action button bar */}
                       <div className="flex flex-wrap items-center justify-between gap-4 bg-[#1A1A2E]/60 p-4 rounded-2xl border border-white/5">
                         <div className="flex items-center gap-3">
                           <span className="text-xs font-bold text-white/50">{t('videoSource')}:</span>
                           <span className="text-xs font-mono text-cyan-300 break-all select-all bg-black/40 px-3 py-1 rounded">
-                            {currentEpisode?.videoUrl || 'Fallback player stream active'}
+                            {currentEpisode?.videoUrl 
+                              ? activeProviderId === 'vidbox-ultra' 
+                                ? currentEpisode.videoUrl 
+                                : `${currentEpisode.videoUrl.split('?')[0]}?provider=${activeProviderId}&secure=true` 
+                              : 'Fallback player stream active'}
                           </span>
                         </div>
 
@@ -2614,67 +3884,216 @@ export default function App() {
                             No episodes uploaded for this series yet. Add some in the Parent secure portal.
                           </div>
                         ) : (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {episodes.map(ep => {
-                              const isCurrent = currentEpisode?.id === ep.id;
-                              return (
-                                <div
-                                  key={ep.id}
-                                  onClick={() => {
-                                    setCurrentEpisode(ep);
-                                    setIsPlaying(true);
-                                    const savedPct = currentProfile ? (episodeProgressMap[`${currentProfile.id}_${ep.id}`] || 0) : 0;
-                                    setVideoProgress(savedPct);
-                                  }}
-                                  className={`flex flex-col bg-[#1A1A2E]/80 rounded-xl border transition-all duration-300 cursor-pointer overflow-hidden ${
-                                    isCurrent ? 'border-cyan-400 scale-[1.02] shadow-lg shadow-cyan-400/10 bg-white/5' : 'border-white/5 hover:border-white/10 hover:bg-white/5'
-                                  }`}
+                          <>
+                            {/* EPISODE LIST CONTROLS */}
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5 border-b border-white/5 pb-4">
+                              <div className="flex items-center gap-3">
+                                <h3 className="font-extrabold text-white text-lg flex items-center gap-2">
+                                  <List className="w-5 h-5 text-purple-400" />
+                                  {lang === 'ar' ? 'الحلقات' : 'Episodes'}
+                                  <span className="text-white/40 text-xs px-2 py-0.5 bg-white/10 rounded-full">{episodes.length}</span>
+                                </h3>
+                                <button
+                                  onClick={() => setIsEpisodesCollapsed(!isEpisodesCollapsed)}
+                                  className="text-xs font-bold text-cyan-400 bg-cyan-400/10 px-3 py-1.5 rounded-xl hover:bg-cyan-400/20 active:scale-95 transition-all flex items-center gap-1.5 border border-cyan-400/20"
+                                  title={isEpisodesCollapsed ? "Expand Episode List" : "Collapse Episode List"}
                                 >
-                                  <div className="relative w-full aspect-video bg-black shrink-0">
-                                    <img src={ep.thumbnail || activeVideo?.poster || activeVideo?.banner || 'https://images.unsplash.com/photo-1542204165-65bf26472b9b?q=80&w=400'} alt={ep.title[lang] || ep.title.en} className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
-                                    {isCurrent && (
-                                      <div className="absolute inset-0 bg-cyan-400/20 flex items-center justify-center backdrop-blur-[1px]">
-                                        <Play className="w-12 h-12 text-white fill-white shadow-lg drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]" />
-                                      </div>
-                                    )}
-                                    {/* Watched Progress Indicator */}
-                                    {(() => {
-                                      const epProg = currentProfile ? (episodeProgressMap[`${currentProfile.id}_${ep.id}`] || 0) : 0;
-                                      if (epProg > 0) {
-                                        return (
-                                          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
-                                            <div className="h-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.8)]" style={{ width: `${Math.min(epProg, 100)}%` }} />
-                                          </div>
-                                        );
-                                      }
-                                      return null;
-                                    })()}
-                                  </div>
-                                  <div className="p-4 flex flex-col gap-1.5 flex-1 w-full bg-gradient-to-b from-[#1A1A2E]/50 to-transparent">
-                                    <div className="flex items-center justify-between gap-2 w-full">
-                                      <p className={`font-extrabold text-sm line-clamp-1 flex-1 ${isCurrent ? 'text-cyan-400' : 'text-white'}`}>
-                                        E{ep.episodeNumber}: {ep.title[lang] || ep.title.en}
-                                      </p>
-                                      <span className="text-[10px] font-mono font-bold text-white/50 bg-black/40 px-1.5 py-0.5 rounded border border-white/5 shrink-0">
-                                        {ep.duration}
-                                      </span>
-                                    </div>
-                                    <p className="text-[11px] text-white/50 line-clamp-2 leading-relaxed">
-                                      {ep.description[lang] || ep.description.en}
-                                    </p>
-                                  </div>
+                                  {isEpisodesCollapsed ? (
+                                    <>
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                      <span>{lang === 'ar' ? 'عرض الحلقات' : 'Show Episodes'}</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ChevronUp className="w-3.5 h-3.5" />
+                                      <span>{lang === 'ar' ? 'إخفاء الحلقات' : 'Hide Episodes'}</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                              
+                              {!isEpisodesCollapsed && (
+                                <div className="flex items-center gap-2 bg-[#0F0F1A] border border-white/5 p-1 rounded-2xl w-full sm:w-auto overflow-x-auto scrollbar-hide">
+                                  <button
+                                    onClick={() => setEpisodeFilter('all')}
+                                    className={`flex-1 sm:flex-none text-xs px-4 py-2 rounded-xl transition-all font-bold whitespace-nowrap ${episodeFilter === 'all' ? 'bg-[#FF0080] text-white shadow-[0_0_15px_rgba(255,0,128,0.3)]' : 'text-white/50 hover:text-white hover:bg-white/5'}`}
+                                  >
+                                    {lang === 'ar' ? 'الكل' : 'All'}
+                                  </button>
+                                  <button
+                                    onClick={() => setEpisodeFilter('unwatched')}
+                                    className={`flex-1 sm:flex-none text-xs px-4 py-2 rounded-xl transition-all font-bold whitespace-nowrap ${episodeFilter === 'unwatched' ? 'bg-cyan-500 text-black shadow-[0_0_15px_rgba(0,242,255,0.3)]' : 'text-white/50 hover:text-white hover:bg-white/5'}`}
+                                  >
+                                    {lang === 'ar' ? 'لم تُشاهد' : 'Unwatched'}
+                                  </button>
+                                  <button
+                                    onClick={() => setEpisodeFilter('favorites')}
+                                    className={`flex-1 sm:flex-none text-xs px-4 py-2 rounded-xl transition-all font-bold flex items-center justify-center gap-1.5 whitespace-nowrap ${episodeFilter === 'favorites' ? 'bg-rose-500 text-white shadow-[0_0_15px_rgba(225,29,72,0.3)]' : 'text-white/50 hover:text-white hover:bg-white/5'}`}
+                                  >
+                                    <Heart className={`w-3 h-3 ${episodeFilter === 'favorites' ? 'fill-current' : ''}`} />
+                                    {lang === 'ar' ? 'المفضلة' : 'Favorites'}
+                                  </button>
+                                  <button
+                                    onClick={() => setEpisodeFilter('queue')}
+                                    className={`flex-1 sm:flex-none text-xs px-4 py-2 rounded-xl transition-all font-bold flex items-center justify-center gap-1.5 whitespace-nowrap ${episodeFilter === 'queue' ? 'bg-amber-500 text-black shadow-[0_0_15px_rgba(245,158,11,0.3)]' : 'text-white/50 hover:text-white hover:bg-white/5'}`}
+                                  >
+                                    <ListMusic className="w-3.5 h-3.5" />
+                                    <span>
+                                      {lang === 'ar' ? `الانتظار (${playbackQueue.length})` : `Queue (${playbackQueue.length})`}
+                                    </span>
+                                  </button>
                                 </div>
-                              );
-                            })}
-                          </div>
+                              )}
+                            </div>
+
+                            {!isEpisodesCollapsed ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-6 transition-all duration-300">
+                                {(() => {
+                                  const displayedEpisodes = episodeFilter === 'queue' ? playbackQueue : episodes.filter(ep => {
+                                    if (episodeFilter === 'unwatched') {
+                                      const pct = currentProfile ? (episodeProgressMap[`${currentProfile.id}_${ep.id}`] || 0) : 0;
+                                      return pct < 90;
+                                    }
+                                    if (episodeFilter === 'favorites') {
+                                      return episodeFavorites.includes(ep.id);
+                                    }
+                                    return true;
+                                  });
+
+                                  if (displayedEpisodes.length === 0) {
+                                    return (
+                                      <div className="col-span-full bg-white/5 rounded-2xl p-8 text-center text-xs text-white/40 border border-dashed border-white/15 flex flex-col items-center justify-center gap-3">
+                                        <ListMusic className="w-8 h-8 text-amber-500 animate-pulse" />
+                                        <span className="font-extrabold text-white text-sm">
+                                          {episodeFilter === 'queue' 
+                                            ? (lang === 'ar' ? 'قائمة الانتظار فارغة' : 'Your Playback Queue is Empty')
+                                            : (episodeFilter === 'favorites' 
+                                                ? (lang === 'ar' ? 'المفضلة فارغة' : 'No Favorite Episodes yet')
+                                                : (lang === 'ar' ? 'لا توجد حلقات للمشاهدة' : 'No Episodes found'))}
+                                        </span>
+                                        <p className="max-w-xs text-[11px] text-white/40">
+                                          {episodeFilter === 'queue' 
+                                            ? (lang === 'ar' ? 'أضف حلقات من القائمة بالضغط على زر "قائمة الانتظار" لتشغيل متتالي تلقائي.' : 'Add some episodes using the "Queue" button to watch automatically when the current one ends.')
+                                            : (lang === 'ar' ? 'انقر على أيقونة القلب على أي حلقة لحفظها في قائمتك المفضلة.' : 'Click the heart button on any episode to list them here.')}
+                                        </p>
+                                      </div>
+                                    );
+                                  }
+
+                                  return displayedEpisodes.map(ep => {
+                                    const isCurrent = currentEpisode?.id === ep.id;
+                                    const isQueued = playbackQueue.some(q => q.id === ep.id);
+                                    return (
+                                      <div
+                                        key={ep.id}
+                                        onClick={() => {
+                                          setCurrentEpisode(ep);
+                                          setIsPlaying(true);
+                                          const savedPct = currentProfile ? (episodeProgressMap[`${currentProfile.id}_${ep.id}`] || 0) : 0;
+                                          setVideoProgress(savedPct);
+                                        }}
+                                        className={`flex flex-col bg-[#1A1A2E]/80 rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden relative group/ep ${
+                                          isCurrent ? 'border-cyan-400 scale-[1.02] shadow-xl shadow-cyan-400/20 bg-white/5' : 'border-white/5 hover:border-white/15 hover:bg-white/5'
+                                        }`}
+                                      >
+                                        <button 
+                                          onClick={(e) => { e.stopPropagation(); handleToggleEpisodeFavorite(ep.id); }}
+                                          className="absolute top-3 right-3 bg-black/50 backdrop-blur-md p-2 rounded-full z-10 hover:bg-black/95 transition-all opacity-0 group-hover/ep:opacity-100 hover:scale-110 shadow-lg border border-white/10"
+                                        >
+                                          <Heart className={`w-4 h-4 ${episodeFavorites.includes(ep.id) ? 'fill-rose-500 text-rose-500' : 'text-white'}`} />
+                                        </button>
+
+                                        {/* Add to Playback Queue Button */}
+                                        <button 
+                                          onClick={(e) => { 
+                                            e.stopPropagation(); 
+                                            if (isQueued) {
+                                              removeFromQueue(ep.id);
+                                            } else {
+                                              addToQueue(ep);
+                                            }
+                                          }}
+                                          className={`absolute top-3 left-3 bg-black/60 backdrop-blur-md px-2.5 py-1.5 rounded-xl z-10 hover:bg-black/90 hover:scale-105 transition-all flex items-center gap-1 shadow-lg border border-white/10 ${isQueued ? 'opacity-100 border-emerald-500/30 font-black' : 'opacity-0 group-hover/ep:opacity-100'}`}
+                                        >
+                                          {isQueued ? (
+                                            <>
+                                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                              <span className="text-emerald-400 text-[9px] font-black tracking-wider uppercase">{lang === 'ar' ? 'مضاف' : 'Queued'}</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Plus className="w-3.5 h-3.5 text-cyan-400" />
+                                              <span className="text-cyan-300 text-[9px] font-black tracking-wider uppercase">{lang === 'ar' ? 'الانتظار' : 'Queue'}</span>
+                                            </>
+                                          )}
+                                        </button>
+
+                                        <div className="relative w-full aspect-video bg-black shrink-0">
+                                          <img src={ep.thumbnail || activeVideo?.poster || activeVideo?.banner || 'https://images.unsplash.com/photo-1542204165-65bf26472b9b?q=80&w=400'} alt={ep.title[lang] || ep.title.en} className="w-full h-full object-cover transition-transform duration-700 group-hover/ep:scale-105" />
+                                          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none" />
+                                          
+                                          {/* Integrated High-Contrast Duration Marker & Icon */}
+                                          <span className="absolute bottom-3 right-3 text-[10px] sm:text-xs font-black font-mono text-white bg-black/80 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/15 shadow-xl flex items-center gap-1.5 z-10">
+                                            <Watch className="w-3.5 h-3.5 text-cyan-400" />
+                                            {ep.duration}
+                                          </span>
+
+                                          {isCurrent && (
+                                            <div className="absolute inset-0 bg-cyan-400/25 flex items-center justify-center backdrop-blur-[1.5px]">
+                                              <Play className="w-14 h-14 text-white fill-white shadow-2xl drop-shadow-[0_0_20px_rgba(34,211,238,0.7)] animate-pulse" />
+                                            </div>
+                                          )}
+                                          {/* Watched Progress Indicator */}
+                                          {(() => {
+                                            const epProg = currentProfile ? (episodeProgressMap[`${currentProfile.id}_${ep.id}`] || 0) : 0;
+                                            if (epProg > 0) {
+                                              return (
+                                                <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-white/20">
+                                                  <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 shadow-[0_0_12px_rgba(34,211,238,0.9)]" style={{ width: `${Math.min(epProg, 100)}%` }} />
+                                                </div>
+                                              );
+                                            }
+                                            return null;
+                                          })()}
+                                        </div>
+                                        <div className="p-5 flex flex-col gap-2 flex-1 w-full bg-[#111122]/60 bg-gradient-to-b from-[#1A1A2E]/30 to-transparent">
+                                          <div className="flex items-center justify-between gap-2 w-full">
+                                            <p className={`font-black text-base line-clamp-1 flex-1 transition-colors ${isCurrent ? 'text-cyan-400 animate-pulse' : 'text-white group-hover/ep:text-cyan-400'}`}>
+                                              E{ep.episodeNumber}: {ep.title[lang] || ep.title.en}
+                                            </p>
+                                          </div>
+                                          <p className="text-[11px] sm:text-xs text-white/50 line-clamp-2 leading-relaxed">
+                                            {ep.description[lang] || ep.description.en}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    );
+                                  });
+                                })()}
+                              </div>
+                            ) : (
+                              <div 
+                                onClick={() => setIsEpisodesCollapsed(false)}
+                                className="bg-[#111122]/40 backdrop-blur-sm rounded-2xl p-8 text-center text-xs text-white/50 cursor-pointer border border-dashed border-white/15 hover:border-cyan-400/40 hover:bg-[#111122]/80 transition-all duration-300 group flex flex-col items-center justify-center gap-2 shadow-2xl"
+                              >
+                                <List className="w-8 h-8 text-cyan-400 mb-1 animate-bounce" />
+                                <span className="font-extrabold text-white text-sm">
+                                  {lang === 'ar' ? 'تم طي قائمة الحلقات' : 'Episode List Collapsed'}
+                                </span>
+                                <span className="text-[11px] text-white/40">
+                                  {lang === 'ar' ? 'انقر هنا لإعادتها أو إظهارها لتعديل حجم الشاشة.' : 'Click anywhere on this bar to expand and reveal the episodes grid.'}
+                                </span>
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
 
                     </div>
 
                     {/* CLIENTS REVIEWS, SPONSOR ADS BLOCK - Right sidebar */}
-                    <div className="flex flex-col gap-6">
+                    {!isTheaterMode && (
+                      <div className="flex flex-col gap-6">
                       
                       {/* --- WATCH PARTY TAB SWITCHER --- */}
                       {watchPartyId && (
@@ -3049,7 +4468,8 @@ export default function App() {
                     </>
                   )}
 
-                    </div>
+                      </div>
+                    )}
                   </motion.div>
                 )}</AnimatePresence>
 
@@ -3064,7 +4484,7 @@ export default function App() {
                           className="w-full flex-none bg-gradient-to-r from-blue-900 to-purple-900 rounded-3xl overflow-hidden relative cursor-pointer group shadow-2xl mb-4 border border-white/10 hover:border-cyan-400 transition-all"
                           onClick={() => {
                             setActiveVideo(filteredVideos[0]);
-                            setActiveTab('theater');
+                            setActiveTab('home');
                             setSearchQuery('');
                             window.scrollTo({ top: 0, behavior: 'smooth' });
                           }}>
@@ -3130,7 +4550,7 @@ export default function App() {
                        className="w-full h-80 md:h-[450px] flex-none bg-gradient-to-r from-blue-900 to-purple-900 rounded-3xl overflow-hidden relative cursor-pointer group shadow-2xl mb-8 border border-white/5 hover:border-cyan-400 transition-all"
                        onClick={() => {
                          setActiveVideo(videos[0]);
-                         setActiveTab('theater');
+                         setActiveTab('home');
                          window.scrollTo({ top: 0, behavior: 'smooth' });
                        }}>
                        <div className="absolute inset-0 z-0">
@@ -4967,6 +6387,82 @@ CREATE TABLE Playback_Reports (
                 ? 'ملاحظة: يتطلب هذا المتصفح ميزة Speech Recognition.' 
                 : 'Supports Firefox, Chrome, Edge and Safari Web Speech API'}
             </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Keyboard Shortcuts Help Sheet */}
+      <AnimatePresence>
+        {showHotkeysModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer"
+            onClick={() => setShowHotkeysModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="w-full max-w-md p-6 rounded-[30px] bg-[#0E0E14] border border-[#00F2FF]/20 shadow-[0_20px_50px_rgba(0,242,255,0.15)] text-white/90 text-left font-sans relative overflow-hidden cursor-default"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-cyan-500/10 to-transparent blur-2xl pointer-events-none" />
+
+              <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-cyan-500/15 text-cyan-400 rounded-2xl border border-cyan-400/20">
+                    <Keyboard className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black tracking-wide text-white">
+                      {lang === 'ar' ? 'أزرار التحكم السريع' : 'Keyboard Shortcuts'}
+                    </h3>
+                    <p className="text-[10px] text-zinc-500 font-medium">
+                      {lang === 'ar' ? 'تحكم بالبث كالمحترفين' : 'Cinematic stream hotkeys'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowHotkeysModal(false)}
+                  className="p-1 px-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/40 transition-colors uppercase font-mono text-[9px] font-black border border-white/5 active:scale-95 cursor-pointer"
+                >
+                  {lang === 'ar' ? 'إغلاق ×' : 'Close [Esc]'}
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-3 font-medium">
+                {[
+                  { key: 'Space', descAr: 'تشغيل / إيقاف مؤقت للفيلم', descEn: 'Toggle Video Play & Pause' },
+                  { key: '← Left Arrow', descAr: 'إرجاع البث 10 ثوانٍ للخلف', descEn: 'Seek backward 10 seconds' },
+                  { key: '→ Right Arrow', descAr: 'تقديم البث 10 ثوانٍ للأمام', descEn: 'Seek forward 10 seconds' },
+                  { key: 'M', descAr: 'كتم / تفعيل الصوت الفوري', descEn: 'Toggle Mute & Unmute volume' },
+                  { key: 'T', descAr: 'تفعيل / إيقاف نمط المسرح السينمائي', descEn: 'Toggle Theater Mode view scale' },
+                  { key: 'C', descAr: 'تفعيل / إلغاء الهالة الملونة الخلفية', descEn: 'Toggle Ambient Aura glow halo' },
+                  { key: 'N', descAr: 'عرض نافذة البيانات التفريبية للبث', descEn: 'Toggle developer Stats for Nerds' },
+                  { key: 'L', descAr: 'قفل واجهة الأزرار لمنع الضغط بالخطأ', descEn: 'Lock player controls overlay HUD' },
+                  { key: 'B', descAr: 'إنشاء علامة فصل مخصصة في الوقت الحالي', descEn: 'Add customized timeline bookmark' },
+                  { key: 'H', descAr: 'عرض دليل مفاتيح الاختصارات المفتوح', descEn: 'Toggle this help reference sheets' },
+                ].map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between bg-white/[0.02] hover:bg-white/[0.04] p-2.5 px-3.5 rounded-2xl border border-white/5 transition-all text-[11px]">
+                    <span className="text-zinc-300 font-semibold">{lang === 'ar' ? item.descAr : item.descEn}</span>
+                    <kbd className="bg-zinc-800/80 text-cyan-300 font-mono text-[10px] font-bold px-2.5 py-1 rounded-lg border border-white/10 shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
+                      {item.key}
+                    </kbd>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 border-t border-white/5 pt-3.5 flex items-center justify-between text-[10px]">
+                <span className="text-white/30">{lang === 'ar' ? 'الحالة الحالية المقفلة:' : 'Current Lock State:'}</span>
+                <span className={`font-black uppercase tracking-wider ${isPlayerLocked ? 'text-red-400 font-bold' : 'text-emerald-400 font-bold'}`}>
+                  {isPlayerLocked 
+                    ? (lang === 'ar' ? '🔒 نشطة (الأزرار مقفلة)' : '🔒 Active (UI Locked)') 
+                    : (lang === 'ar' ? '🔓 معطلة (مفتوحة)' : '🔓 Offline (Unlocked)')}
+                </span>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
