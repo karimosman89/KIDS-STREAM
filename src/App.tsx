@@ -8,7 +8,7 @@ import {
   HelpCircle, ChevronLeft, ArrowRight, Eye, Film, BookOpen, MessageSquare,
   FastForward, Send, Link, Crown, X, ChevronDown, ChevronUp, List, Bookmark, Tag,
   Activity, Terminal, Keyboard, VolumeX, Lock, Unlock, AudioLines, Sun, Contrast,
-  ExternalLink
+  ExternalLink, Moon, PictureInPicture2
 } from 'lucide-react';
 import { TRANSLATIONS, SupportedLanguage } from './locale';
 import { VideoContent, Episode, Comment, SystemLog, Advertisement, UserProfile, CustomAvatarConfig } from './types';
@@ -33,9 +33,33 @@ export default function App() {
   const ignoreNextEpisodeChangeRef = useRef<boolean>(false);
   
   // Navigation
-  const [activeTab, setActiveTab] = useState<'home' | 'movies' | 'series' | 'anime' | 'educational' | 'favorites' | 'subscriptions' | 'parent-portal' | 'downloads'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'movies' | 'series' | 'anime' | 'educational' | 'favorites' | 'subscriptions' | 'parent-portal' | 'downloads' | 'open-resources'>('home');
   const [ageFilter, setAgeFilter] = useState<string>('all');
   const [selectedGenre, setSelectedGenre] = useState<string>('all');
+
+  // Custom states for Universal Open Resource Importer & Streamer
+  const [openResSearchQuery, setOpenResSearchQuery] = useState<string>('');
+  const [openResSearchResults, setOpenResSearchResults] = useState<any[]>([]);
+  const [openResSearchLoading, setOpenResSearchLoading] = useState<boolean>(false);
+  const [openResActiveSubTab, setOpenResActiveSubTab] = useState<'imdb' | 'link' | 'explorer'>('imdb');
+
+  // IMDb & TMDB import form states
+  const [openResImdbId, setOpenResImdbId] = useState<string>('');
+  const [openResTmdbId, setOpenResTmdbId] = useState<string>('');
+  const [openResImdbTitleEn, setOpenResImdbTitleEn] = useState<string>('');
+  const [openResImdbTitleAr, setOpenResImdbTitleAr] = useState<string>('');
+  const [openResImdbType, setOpenResImdbType] = useState<'movie' | 'series'>('movie');
+  const [openResSeason, setOpenResSeason] = useState<number>(1);
+  const [openResEpisode, setOpenResEpisode] = useState<number>(1);
+
+  // Custom link stream states
+  const [openResLinkUrl, setOpenResLinkUrl] = useState<string>('');
+  const [openResLinkTitleEn, setOpenResLinkTitleEn] = useState<string>('');
+  const [openResLinkTitleAr, setOpenResLinkTitleAr] = useState<string>('');
+  const [openResLinkDesc, setOpenResLinkDesc] = useState<string>('');
+  const [openResLinkType, setOpenResLinkType] = useState<'movie' | 'series' | 'anime' | 'educational'>('movie');
+
+  const [openResImportStatus, setOpenResImportStatus] = useState<string | null>(null);
   
   // Videos & Search
   const [videos, setVideos] = useState<VideoContent[]>([]);
@@ -63,6 +87,8 @@ export default function App() {
   const [showArenaTooltip, setShowArenaTooltip] = useState<boolean>(false);
   const [isCinematicMode, setIsCinematicMode] = useState<boolean>(false);
   const [isTheaterMode, setIsTheaterMode] = useState<boolean>(false);
+  const [isAutoDimEnabled, setIsAutoDimEnabled] = useState<boolean>(false);
+  const [isPipActive, setIsPipActive] = useState<boolean>(false);
   const [showSettingsPopover, setShowSettingsPopover] = useState<boolean>(false);
   const [videoTechnicalMeta, setVideoTechnicalMeta] = useState<{
     resolution: string;
@@ -2213,54 +2239,99 @@ export default function App() {
   const getCalculatedStreamUrl = () => {
     if (!currentEpisode) return '';
 
-    // If we have resolved TMDB, let's construct highly reliable stream embed URLs depending on selected provider!
+    // Extract ID configuration dynamically to support IMDb, TMDB, Jikan, TVmaze, etc.
+    let searchId: string | number | undefined = undefined;
+    let searchType: 'tv' | 'movie' = 'movie';
+    let isImdb = false;
+
     if (resolvedTmdbInfo) {
-      const tmdbId = resolvedTmdbInfo.tmdbId;
-      const isTV = resolvedTmdbInfo.resolvedType === 'tv';
+      searchId = resolvedTmdbInfo.tmdbId;
+      searchType = resolvedTmdbInfo.resolvedType as any;
+      isImdb = false;
+    } else if (activeVideo) {
+      if (activeVideo.imdbId) {
+        searchId = activeVideo.imdbId;
+        searchType = (activeVideo.type === 'series' || activeVideo.type === 'anime') ? 'tv' : 'movie';
+        isImdb = true;
+      } else if (activeVideo.id.startsWith('imdb_')) {
+        searchId = activeVideo.id.replace('imdb_tv_', '').replace('imdb_', '');
+        searchType = (activeVideo.type === 'series' || activeVideo.type === 'anime') ? 'tv' : 'movie';
+        isImdb = true;
+      } else if (activeVideo.id.startsWith('tmdb_tv_')) {
+        searchId = parseInt(activeVideo.id.replace('tmdb_tv_', ''));
+        searchType = 'tv';
+        isImdb = false;
+      } else if (activeVideo.id.startsWith('tmdb_')) {
+        searchId = parseInt(activeVideo.id.replace('tmdb_', ''));
+        searchType = 'movie';
+        isImdb = false;
+      }
+    }
+
+    if (searchId) {
+      const isTV = searchType === 'tv';
       const season = currentEpisode.seasonId ? parseInt(currentEpisode.seasonId) || 1 : 1;
       const episodeNum = currentEpisode.episodeNumber || 1;
 
       // Map servers to complete functional mirrors
       if (activeProviderId === 'vidsrc-xyz') {
-        return isTV 
-          ? `https://vidsrc.xyz/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episodeNum}`
-          : `https://vidsrc.xyz/embed/movie?tmdb=${tmdbId}`;
+        if (isImdb) {
+          return isTV
+            ? `https://vidsrc.xyz/embed/tv?imdb=${searchId}&season=${season}&episode=${episodeNum}`
+            : `https://vidsrc.xyz/embed/movie?imdb=${searchId}`;
+        } else {
+          return isTV 
+            ? `https://vidsrc.xyz/embed/tv?tmdb=${searchId}&season=${season}&episode=${episodeNum}`
+            : `https://vidsrc.xyz/embed/movie?tmdb=${searchId}`;
+        }
       } else if (activeProviderId === 'vidsrc-cc') {
         return isTV
-          ? `https://vidsrc.cc/embed/tv/${tmdbId}/${season}/${episodeNum}`
-          : `https://vidsrc.cc/embed/movie/${tmdbId}`;
+          ? `https://vidsrc.cc/embed/tv/${searchId}/${season}/${episodeNum}`
+          : `https://vidsrc.cc/embed/movie/${searchId}`;
       } else if (activeProviderId === 'vidsrc-in') {
         return isTV
-          ? `https://vidsrc.in/embed/tv/${tmdbId}/${season}/${episodeNum}`
-          : `https://vidsrc.in/embed/movie/${tmdbId}`;
+          ? `https://vidsrc.in/embed/tv/${searchId}/${season}/${episodeNum}`
+          : `https://vidsrc.in/embed/movie/${searchId}`;
       } else if (activeProviderId === 'vidsrc-pm') {
         return isTV
-          ? `https://vidsrc.pm/embed/tv/${tmdbId}/${season}/${episodeNum}`
-          : `https://vidsrc.pm/embed/movie/${tmdbId}`;
+          ? `https://vidsrc.pm/embed/tv/${searchId}/${season}/${episodeNum}`
+          : `https://vidsrc.pm/embed/movie/${searchId}`;
       } else if (activeProviderId === 'vidbox-ultra') {
         return isTV
-          ? `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episodeNum}`
-          : `https://vidsrc.to/embed/movie/${tmdbId}`;
+          ? `https://vidsrc.to/embed/tv/${searchId}/${season}/${episodeNum}`
+          : `https://vidsrc.to/embed/movie/${searchId}`;
       } else if (activeProviderId === 'hls-cyber') {
         return isTV
-          ? `https://embed.su/embed/tv/${tmdbId}/${season}/${episodeNum}`
-          : `https://embed.su/embed/movie/${tmdbId}`;
+          ? `https://embed.su/embed/tv/${searchId}/${season}/${episodeNum}`
+          : `https://embed.su/embed/movie/${searchId}`;
       } else if (activeProviderId === 'super-fast') {
         return isTV
-          ? `https://2embed.cc/embed/tv/${tmdbId}/${season}/${episodeNum}`
-          : `https://2embed.cc/embed/${tmdbId}`;
+          ? `https://2embed.cc/embed/tv/${searchId}/${season}/${episodeNum}`
+          : `https://2embed.cc/embed/${searchId}`;
       } else if (activeProviderId === 'vidsrc-pro') {
         return isTV
-          ? `https://vidsrc.pro/embed/tv/${tmdbId}/${season}/${episodeNum}`
-          : `https://vidsrc.pro/embed/movie/${tmdbId}`;
+          ? `https://vidsrc.pro/embed/tv/${searchId}/${season}/${episodeNum}`
+          : `https://vidsrc.pro/embed/movie/${searchId}`;
       } else if (activeProviderId === 'autoembed-co') {
-        return isTV
-          ? `https://autoembed.co/tv/tmdb/${tmdbId}-${season}-${episodeNum}`
-          : `https://autoembed.co/movie/tmdb/${tmdbId}`;
+        if (isImdb) {
+          return isTV
+            ? `https://autoembed.co/tv/imdb/${searchId}-${season}-${episodeNum}`
+            : `https://autoembed.co/movie/imdb/${searchId}`;
+        } else {
+          return isTV
+            ? `https://autoembed.co/tv/tmdb/${searchId}-${season}-${episodeNum}`
+            : `https://autoembed.co/movie/tmdb/${searchId}`;
+        }
       } else if (activeProviderId === 'vidsrc-embed') {
-        return isTV 
-          ? `https://vidsrc.xyz/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episodeNum}`
-          : `https://vidsrc.xyz/embed/movie?tmdb=${tmdbId}`;
+        if (isImdb) {
+          return isTV
+            ? `https://vidsrc.xyz/embed/tv?imdb=${searchId}&season=${season}&episode=${episodeNum}`
+            : `https://vidsrc.xyz/embed/movie?imdb=${searchId}`;
+        } else {
+          return isTV 
+            ? `https://vidsrc.xyz/embed/tv?tmdb=${searchId}&season=${season}&episode=${episodeNum}`
+            : `https://vidsrc.xyz/embed/movie?tmdb=${searchId}`;
+        }
       }
     }
 
@@ -2412,6 +2483,12 @@ export default function App() {
                 >
                   {lang === 'ar' ? 'التنزيلات ⬇️' : 'Downloads ⬇️'}
                 </button>
+                <button 
+                  onClick={() => { setActiveTab('open-resources'); }} 
+                  className={`pb-1 transition-all ${activeTab === 'open-resources' ? 'text-white border-b-2 border-emerald-450 font-extrabold text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-lg' : 'hover:text-emerald-300 text-emerald-400/80'}`}
+                >
+                  {lang === 'ar' ? 'البث المفتوح 🌐' : 'Open Resources 🌐'}
+                </button>
               </nav>
             </div>
 
@@ -2483,7 +2560,7 @@ export default function App() {
           <div className="flex-1 overflow-y-auto px-4 md:px-10 py-6 z-10 flex flex-col gap-8">
             
             {/* 1. HOME & CATEGORY CHANNELS VIEW */}
-            {activeTab !== 'parent-portal' && activeTab !== 'subscriptions' && activeTab !== 'downloads' && (
+            {activeTab !== 'parent-portal' && activeTab !== 'subscriptions' && activeTab !== 'downloads' && activeTab !== 'open-resources' && (
               <>
                 {/* HERO BANNER SLIDER (Sophisticated design background with "Cosmic Buddies" feeling based on user active pick) */}
                 {activeVideo && (
@@ -2621,6 +2698,15 @@ export default function App() {
                       title={lang === 'ar' ? "انقر هنا لإغلاق نمط السينما" : "Click to dismiss Theater Mode"}
                     />
                   )}
+                  {isAutoDimEnabled && isPlaying && activeVideo && !isTheaterMode && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 0.85 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.8, ease: "easeInOut" }}
+                      className="fixed inset-0 bg-[#020205]/90 z-40 pointer-events-none"
+                    />
+                  )}
                 </AnimatePresence>
 
                 <AnimatePresence mode="wait">
@@ -2646,7 +2732,7 @@ export default function App() {
                       className={`grid grid-cols-1 ${isCinematicMode || isTheaterMode ? 'lg:grid-cols-1' : 'lg:grid-cols-3'} gap-8 p-6 md:p-8 rounded-[35px] border scroll-mt-24 transition-all duration-500 
                         ${isTheaterMode 
                           ? 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95vw] md:w-[90vw] max-w-7xl h-auto max-h-[90vh] z-[65] bg-[#0A0A10]/95 border-cyan-500/30 shadow-[0_0_100px_rgba(0,0,0,0.95)] overflow-y-auto backdrop-blur-3xl' 
-                          : 'bg-[#0F0F14]/65 backdrop-blur-xl border-white/10 relative overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)]'
+                          : `bg-[#0F0F14]/65 backdrop-blur-xl border-white/10 relative overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] ${isAutoDimEnabled && isPlaying ? 'z-50 border-cyan-400/30 shadow-[0_0_60px_rgba(34,211,238,0.2)]' : ''}`
                         }
                         ${isGlowEnabled ? 'glow-enabled hover:border-cyan-400/25 hover:shadow-[0_0_40px_rgba(34,211,238,0.12)]' : ''} ${isScrolling ? 'scroll-paused' : ''}`}
                     >
@@ -3048,8 +3134,10 @@ export default function App() {
                                     ref={videoRef}
                                     src={activeUrl}
                                     className="w-full h-full object-contain pointer-events-none"
-                                  autoPlay
-                                  controls={false}
+                                    autoPlay
+                                    controls={false}
+                                    onEnterPictureInPicture={() => setIsPipActive(true)}
+                                    onLeavePictureInPicture={() => setIsPipActive(false)}
                                   onLoadedMetadata={() => {
                                 if (videoRef.current) {
                                   // Restore playback rate speed
@@ -3599,9 +3687,73 @@ export default function App() {
 
                                       {/* Audio Track Option */}
                                       <div className="flex flex-col gap-1.5 align-start text-left">
-                                        <span className="text-[10px] text-white/50 uppercase font-bold tracking-wider">
-                                          {lang === 'ar' ? 'المسار الصوتي' : 'Audio Track'}
-                                        </span>
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-[10px] text-white/50 uppercase font-bold tracking-wider">
+                                            {lang === 'ar' ? 'المسار الصوتي' : 'Audio Track'}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            id="btn-detect-audio-lang"
+                                            onClick={() => {
+                                              if (!activeVideo?.languageOptions?.dubbed?.length) return;
+                                              const browserLanguages = navigator.languages 
+                                                ? navigator.languages.map(l => l.toLowerCase()) 
+                                                : [navigator.language.toLowerCase()];
+                                              
+                                              // Profile interface/app language starts first
+                                              const preferredCodes = [lang.toLowerCase(), ...browserLanguages];
+                                              
+                                              const langMap: Record<string, string[]> = {
+                                                ar: ['arabic', 'ar'],
+                                                en: ['english', 'en'],
+                                                fr: ['french', 'fr'],
+                                                de: ['german', 'de'],
+                                                es: ['spanish', 'es'],
+                                                it: ['italian', 'it'],
+                                                ja: ['japanese', 'ja', 'jp']
+                                              };
+
+                                              let matchedTrack: string | null = null;
+                                              for (const code of preferredCodes) {
+                                                const baseCode = code.split('-')[0];
+                                                const targetNames = langMap[baseCode] || [baseCode];
+                                                matchedTrack = activeVideo.languageOptions.dubbed.find(track => {
+                                                  const tLower = track.toLowerCase();
+                                                  return targetNames.includes(tLower) || tLower === baseCode;
+                                                }) || null;
+                                                if (matchedTrack) break;
+                                              }
+
+                                              if (!matchedTrack && activeVideo.languageOptions.dubbed.length > 0) {
+                                                matchedTrack = activeVideo.languageOptions.dubbed[0];
+                                              }
+
+                                              if (matchedTrack) {
+                                                setSelectedAudio(matchedTrack);
+                                                const label = {
+                                                  en: lang === 'ar' ? 'الإنجليزية' : 'English',
+                                                  ar: lang === 'ar' ? 'العربية' : 'Arabic',
+                                                  fr: lang === 'ar' ? 'الفرنسية' : 'French',
+                                                  es: lang === 'ar' ? 'الإسبانية' : 'Spanish',
+                                                  de: lang === 'ar' ? 'الألمانية' : 'German',
+                                                  it: lang === 'ar' ? 'الإيطالية' : 'Italian',
+                                                  ja: lang === 'ar' ? 'اليابانية' : 'Japanese'
+                                                }[matchedTrack.toLowerCase()] || matchedTrack.toUpperCase();
+
+                                                showSwipeMessage(
+                                                  lang === 'ar' 
+                                                    ? `🎙️ الكشف التلقائي عن اللغة: ${label}` 
+                                                    : `🎙️ Auto-detected audio track: ${label}`
+                                                );
+                                              }
+                                            }}
+                                            className="text-[9px] text-cyan-400 font-bold hover:text-cyan-300 transition-colors flex items-center gap-1 cursor-pointer bg-transparent border-none outline-none"
+                                            title={lang === 'ar' ? 'الكشف التلقائي والمطابقة للغة الصوت المفضلة' : 'Auto-detect best audio track language'}
+                                          >
+                                            <Globe className="w-2.5 h-2.5" />
+                                            <span>{lang === 'ar' ? 'كشف تلقائي' : 'Detect Language'}</span>
+                                          </button>
+                                        </div>
                                         <select
                                           value={selectedAudio}
                                           onChange={(e) => setSelectedAudio(e.target.value)}
@@ -3738,6 +3890,66 @@ export default function App() {
                                             }`}
                                           >
                                             {videoGrayscale ? (lang === 'ar' ? 'مفعّل' : 'Active') : (lang === 'ar' ? 'غير مفعّل' : 'Disabled')}
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* Auto-Dim Lights toggle */}
+                                      <div className="flex flex-col gap-2 align-start text-left border-t border-white/10 pt-2">
+                                        <span className="text-[10px] text-pink-500 uppercase font-bold tracking-wider flex items-center gap-1">
+                                          <Moon className="w-3.5 h-3.5" />
+                                          {lang === 'ar' ? 'تعتيم تلقائي للأضواء' : 'Auto-Dim Lights'}
+                                        </span>
+                                        <div className="flex items-center justify-between text-[9px] text-white/70">
+                                          <span>{lang === 'ar' ? 'تعتيم الواجهة أثناء التشغيل:' : 'Dim interface during playback:'}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const next = !isAutoDimEnabled;
+                                              setIsAutoDimEnabled(next);
+                                              showSwipeMessage(lang === 'ar' ? (next ? '🌙 تعتيم الأضواء نشط' : '☀️ تعتيم الأضواء معطل') : (next ? '🌙 Auto-Dim lights ON' : '☀️ Auto-Dim lights OFF'));
+                                            }}
+                                            className={`px-3 py-1 rounded-xl text-[9px] font-bold transition-all border outline-none active:scale-95 cursor-pointer ${
+                                              isAutoDimEnabled 
+                                                ? 'bg-pink-500/20 border-pink-400/40 text-pink-300 shadow-[0_0_8px_rgba(236,72,153,0.2)] font-extrabold' 
+                                                : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/60'
+                                            }`}
+                                          >
+                                            {isAutoDimEnabled ? (lang === 'ar' ? 'مفعّل' : 'Active') : (lang === 'ar' ? 'غير مفعّل' : 'Disabled')}
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* Picture in Picture Switch */}
+                                      <div className="flex flex-col gap-2 align-start text-left border-t border-white/10 pt-2">
+                                        <span className="text-[10px] text-teal-400 uppercase font-bold tracking-wider flex items-center gap-1">
+                                          <PictureInPicture2 className="w-3.5 h-3.5" />
+                                          {lang === 'ar' ? 'صورة داخل صورة (PIP)' : 'Picture-in-Picture'}
+                                        </span>
+                                        <div className="flex items-center justify-between text-[9px] text-white/70 font-sans">
+                                          <span>{lang === 'ar' ? 'تشغيل الفيديو المصغر:' : 'Activate PIP floating player:'}</span>
+                                          <button
+                                            type="button"
+                                            onClick={async () => {
+                                              if (!videoRef.current) return;
+                                              try {
+                                                if (document.pictureInPictureElement) {
+                                                  await document.exitPictureInPicture();
+                                                } else {
+                                                  await videoRef.current.requestPictureInPicture();
+                                                }
+                                              } catch (err: any) {
+                                                console.error("Failed to toggle PiP:", err);
+                                                showSwipeMessage(lang === 'ar' ? '❌ PIP غير مدعوم في هذا المتصفح' : '❌ PIP not supported in this browser');
+                                              }
+                                            }}
+                                            className={`px-3 py-1 rounded-xl text-[9px] font-bold transition-all border outline-none active:scale-95 cursor-pointer ${
+                                              isPipActive 
+                                                ? 'bg-teal-500/20 border-teal-400/40 text-teal-300 shadow-[0_0_8px_rgba(20,184,166,0.2)] font-extrabold' 
+                                                : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/60'
+                                            }`}
+                                          >
+                                            {isPipActive ? (lang === 'ar' ? 'نشط' : 'Active') : (lang === 'ar' ? 'تفعيل' : 'Activate')}
                                           </button>
                                         </div>
                                       </div>
@@ -5356,6 +5568,916 @@ export default function App() {
                     </div>
                   );
                 })()}
+
+              </div>
+            )}
+
+            {/* 5. UNIVERSAL OPEN RESOURCES STREAM PORTAL */}
+            {activeTab === 'open-resources' && (
+              <div className="max-w-6xl mx-auto py-2 flex flex-col gap-8 animate-fade-in relative z-15">
+                
+                {/* Immersive Header Overview Dashboard Panel */}
+                <div className="relative overflow-hidden rounded-[36px] bg-gradient-to-r from-emerald-950/40 via-[#0F0F15] to-teal-950/40 p-8 border border-emerald-500/20 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div className="absolute -top-10 -left-10 w-40 h-40 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+                  <div className="absolute -bottom-10 right-10 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
+                  
+                  <div className="flex flex-col gap-2 z-10 text-left max-w-xl">
+                    <span className="bg-emerald-500/20 text-emerald-300 text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-widest border border-emerald-500/30 max-w-max">
+                      {lang === 'ar' ? 'البث المفتوح اللامحدود 🌐' : 'Universal Open Resources Streamer 🌐'}
+                    </span>
+                    <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white flex items-center gap-2">
+                      <span>{lang === 'ar' ? 'فضاء مصادر البث المفتوح العجيب' : 'Cosmic Open Stream Resolver'}</span>
+                    </h1>
+                    <p className="text-xs text-white/50 leading-relaxed font-semibold">
+                      {lang === 'ar'
+                        ? 'تجاوز حدود المواقع! ابحث واستورد وشغل أي فيلم، مسلسل، كرتون، أو أنمي من مصادر الأرشيف المفتوحة (IMDb ID، TVmaze، Jikan MAL، ومجموعات الأفلام العامة) من خلال 9 خوادم سحابية حديثة!'
+                        : 'Exceed catalog limits! Directly stream or permanently import any movie, series, cartoon, or anime from tvmaze, Jikan MyAnimeList, Internet Archive, IMDb IDs, or direct streaming URLs.'}
+                    </p>
+                  </div>
+
+                  {openResImportStatus && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-emerald-500/20 border border-emerald-400 text-emerald-200 text-xs py-3 px-5 rounded-2xl flex items-center gap-2 z-10"
+                    >
+                      <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <span>{openResImportStatus}</span>
+                    </motion.div>
+                  )}
+                </div>
+
+                {/* Sub-Tabs Selector inside Open Resources */}
+                <div className="flex border-b border-white/5 pb-0.5 gap-4">
+                  <button 
+                    onClick={() => setOpenResActiveSubTab('imdb')}
+                    className={`pb-3 text-xs uppercase font-black tracking-wider transition-all border-b-2 flex items-center gap-2 ${openResActiveSubTab === 'imdb' ? 'text-emerald-400 border-emerald-400' : 'text-white/40 border-transparent hover:text-white/70'}`}
+                  >
+                    <Film className="w-4 h-4" />
+                    <span>{lang === 'ar' ? 'معرف IMDb / TMDB' : 'IMDb / TMDB Resolvers'}</span>
+                  </button>
+                  <button 
+                    onClick={() => setOpenResActiveSubTab('explorer')}
+                    className={`pb-3 text-xs uppercase font-black tracking-wider transition-all border-b-2 flex items-center gap-2 ${openResActiveSubTab === 'explorer' ? 'text-emerald-400 border-emerald-400' : 'text-white/40 border-transparent hover:text-white/70'}`}
+                  >
+                    <Globe className="w-4 h-4" />
+                    <span>{lang === 'ar' ? 'البحث في الأرشيف المفتوح' : 'Search Open Repositories'}</span>
+                  </button>
+                  <button 
+                    onClick={() => setOpenResActiveSubTab('link')}
+                    className={`pb-3 text-xs uppercase font-black tracking-wider transition-all border-b-2 flex items-center gap-2 ${openResActiveSubTab === 'link' ? 'text-emerald-400 border-emerald-400' : 'text-white/40 border-transparent hover:text-white/70'}`}
+                  >
+                    <Link className="w-4 h-4" />
+                    <span>{lang === 'ar' ? 'رابط بث مباشر / إطار خارجي' : 'Direct Link / Embed Frame'}</span>
+                  </button>
+                </div>
+
+                {/* TAB WINDOWS RENDERING */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  
+                  {/* TAB 1: IMDb / TMDB Resolvers */}
+                  {openResActiveSubTab === 'imdb' && (
+                    <div className="lg:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in text-left">
+                      
+                      {/* IMDb Resolver panel */}
+                      <div className="bg-[#0F0F15]/95 border border-white/5 p-6 rounded-[32px] flex flex-col gap-5 relative overflow-hidden backdrop-blur-strong shadow-2xl">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/5 rounded-full blur-2xl pointer-events-none" />
+                        <div>
+                          <h3 className="text-md font-bold text-yellow-450 flex items-center gap-2">
+                            <Film className="w-5 h-5 text-yellow-400" />
+                            <span>IMDb ID Multi-server Streamer 🎬📡</span>
+                          </h3>
+                          <p className="text-white/50 text-[11px] mt-1">
+                            Resolve IMDb IDs (e.g., <code className="text-yellow-300 bg-yellow-450/10 px-1.5 py-0.5 rounded font-mono">tt0111161</code> / <code className="text-yellow-300 bg-yellow-450/10 px-1.5 py-0.5 rounded font-mono">tt0468569</code>) instantly using all 9 premium providers.
+                          </p>
+                        </div>
+
+                        <div className="flex flex-col gap-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] text-white/50 uppercase font-black">IMDb ID (required)</label>
+                              <input 
+                                type="text"
+                                placeholder="e.g. tt0111161"
+                                value={openResImdbId}
+                                onChange={(e) => setOpenResImdbId(e.target.value.trim())}
+                                className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none font-mono focus:border-yellow-400 transition-all font-semibold"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] text-white/50 uppercase font-black">Type</label>
+                              <select 
+                                value={openResImdbType}
+                                onChange={(e) => setOpenResImdbType(e.target.value as any)}
+                                className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none font-semibold cursor-pointer"
+                              >
+                                <option value="movie">Movie 🎬</option>
+                                <option value="series">TV Series 📺</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {openResImdbType === 'series' && (
+                            <div className="grid grid-cols-2 gap-4 animate-fade-in bg-white/5 p-3.5 rounded-2xl border border-white/5">
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-[10px] text-white/50 uppercase font-black">Season Number</label>
+                                <input 
+                                  type="number"
+                                  min={1}
+                                  value={openResSeason}
+                                  onChange={(e) => setOpenResSeason(Math.max(1, parseInt(e.target.value) || 1))}
+                                  className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none font-mono font-semibold"
+                                />
+                              </div>
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-[10px] text-white/50 uppercase font-black font-sans">Episode Number</label>
+                                <input 
+                                  type="number"
+                                  min={1}
+                                  value={openResEpisode}
+                                  onChange={(e) => setOpenResEpisode(Math.max(1, parseInt(e.target.value) || 1))}
+                                  className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none font-mono font-semibold"
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-4">
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] text-white/50 uppercase font-black">Title (ENGLISH)</label>
+                              <input 
+                                type="text"
+                                placeholder="e.g. Inception"
+                                value={openResImdbTitleEn}
+                                onChange={(e) => setOpenResImdbTitleEn(e.target.value)}
+                                className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none focus:border-yellow-400 font-semibold"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] text-white/50 uppercase font-black">Title (ARABIC)</label>
+                              <input 
+                                type="text"
+                                placeholder="..."
+                                value={openResImdbTitleAr}
+                                onChange={(e) => setOpenResImdbTitleAr(e.target.value)}
+                                className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none focus:border-yellow-400 text-right font-semibold"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex gap-3 justify-end mt-2">
+                            <button
+                              onClick={() => {
+                                if (!openResImdbId) {
+                                  alert(lang === 'ar' ? 'الرجاء إدخال معرف IMDb ID أولاً!' : 'Please insert an IMDb ID first!');
+                                  return;
+                                }
+                                
+                                const baseId = `imdb_${openResImdbId}`;
+                                const titleEnStr = openResImdbTitleEn || `IMDb Stream - ${openResImdbId}`;
+                                const titleArStr = openResImdbTitleAr || titleEnStr;
+                                
+                                const fakeVid: VideoContent = {
+                                  id: baseId,
+                                  title: { en: titleEnStr, ar: titleArStr, fr: titleEnStr, de: titleEnStr, es: titleEnStr, it: titleEnStr },
+                                  description: { 
+                                    en: "Sourced with high-availability links. Stream from any of the offline redundant mirrors built directly into the video technical dashboard settings.", 
+                                    ar: "رابط بث سحابي عالي التوافر مدعوم بنظام الخوادم التسعة لتجنب الانقطاع." 
+                                  },
+                                  poster: "https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=80&w=600",
+                                  banner: "https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=1200",
+                                  type: openResImdbType === 'series' ? 'series' : 'movie',
+                                  ageCategory: "all",
+                                  views: 89000,
+                                  rating: 4.8,
+                                  releaseYear: 2026,
+                                  genres: ["open resources", "stream solver"],
+                                  imdbId: openResImdbId,
+                                  languageOptions: {
+                                    dubbed: ["english", "arabic"],
+                                    subtitled: ["english", "arabic"]
+                                  },
+                                  tags: []
+                                };
+
+                                setResolvedTmdbInfo(null);
+                                setActiveVideo(fakeVid);
+                                if (openResImdbType === 'series') {
+                                  setCurrentEpisode({
+                                    id: `imdb_${openResImdbId}_s${openResSeason}e${openResEpisode}`,
+                                    seasonId: openResSeason.toString(),
+                                    seriesId: baseId,
+                                    episodeNumber: openResEpisode,
+                                    title: { en: `Season ${openResSeason} Episode ${openResEpisode}`, ar: `موسم ${openResSeason} حلقة ${openResEpisode}` },
+                                    description: { en: '', ar: '' },
+                                    duration: "N/A",
+                                    videoUrl: ''
+                                  });
+                                } else {
+                                  setCurrentEpisode({
+                                    id: `dummy_imdb_${openResImdbId}`,
+                                    seasonId: "1",
+                                    seriesId: baseId,
+                                    episodeNumber: 1,
+                                    title: fakeVid.title,
+                                    description: fakeVid.description,
+                                    duration: "N/A",
+                                    videoUrl: ''
+                                  });
+                                }
+
+                                setIsPlaying(true);
+                                document.getElementById('video-arena')?.scrollIntoView({ behavior: 'smooth' });
+                              }}
+                              className="px-5 py-3 rounded-2xl bg-yellow-500 hover:bg-yellow-400 text-black text-xs font-black flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-yellow-500/20"
+                            >
+                              <Play className="w-4 h-4 fill-current text-black" />
+                              <span>{lang === 'ar' ? 'تشغيل البث فوراً 🚀' : 'Stream/Launch Now 🚀'}</span>
+                            </button>
+
+                            <button
+                              onClick={async () => {
+                                if (!openResImdbId) {
+                                  alert(lang === 'ar' ? 'الرجاء إدخال معرف IMDb ID والمسمى الانجليزي لحفظه!' : 'Please insert an IMDb ID and English title to import it!');
+                                  return;
+                                }
+
+                                const titleEnStr = openResImdbTitleEn || `IMDb Stream - ${openResImdbId}`;
+                                const titleArStr = openResImdbTitleAr || titleEnStr;
+                                const baseId = `imdb_${openResImdbId}`;
+                                
+                                const newVidPayload: Partial<VideoContent> = {
+                                  id: baseId,
+                                  title: { en: titleEnStr, ar: titleArStr, fr: titleEnStr, de: titleEnStr, es: titleEnStr, it: titleEnStr },
+                                  description: { 
+                                    en: "Resolved on demand via open directories or high-availability stream mirrors.", 
+                                    ar: "رابط مضاف يدوياً عبر مركز البث المفتوح اللامحدود بدقة فائقة." 
+                                  },
+                                  poster: "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=400",
+                                  banner: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=1200",
+                                  type: openResImdbType === 'series' ? 'series' : 'movie',
+                                  views: Math.floor(Math.random() * 4000) + 120,
+                                  rating: 4.8,
+                                  releaseYear: 2026,
+                                  ageCategory: "all",
+                                  imdbId: openResImdbId,
+                                  genres: ["open resources", "imdb resolver"],
+                                  languageOptions: {
+                                    dubbed: ["english", "arabic"],
+                                    subtitled: ["english", "arabic"]
+                                  }
+                                };
+
+                                try {
+                                  const res = await fetch('/api/videos/add', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(newVidPayload)
+                                  });
+                                  const d = await res.json();
+                                  if (d.success) {
+                                    setVideos(prev => [d.video, ...prev]);
+                                    setOpenResImportStatus(`Successfully Imported "${titleEnStr}" 🌟`);
+                                    setTimeout(() => setOpenResImportStatus(null), 4000);
+                                  }
+                                } catch(e) {
+                                  console.error(e);
+                                }
+                              }}
+                              className="px-5 py-3 rounded-2xl bg-[#1F1F2E]/80 border border-white/10 hover:bg-white/15 text-white text-xs font-bold flex items-center gap-2 transition-all active:scale-95"
+                            >
+                              <Plus className="w-4 h-4 text-cyan-400" />
+                              <span>{lang === 'ar' ? 'إضافة للمكتبة لتسهيل المشاهدة 📥' : 'Import to Catalog 📥'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* TMDB Resolver panel */}
+                      <div className="bg-[#0F0F15]/95 border border-white/5 p-6 rounded-[32px] flex flex-col gap-5 relative overflow-hidden backdrop-blur-strong shadow-2xl">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-[#00F2FF]/5 rounded-full blur-2xl pointer-events-none" />
+                        <div>
+                          <h3 className="text-md font-bold text-[#00F2FF] flex items-center gap-2">
+                            <Sliders className="w-5 h-5 text-[#00F2FF]" />
+                            <span>TMDB ID Custom Streamer 📡⚡</span>
+                          </h3>
+                          <p className="text-white/50 text-[11px] mt-1">
+                            Use a numeric TMDB ID (e.g., <code className="text-cyan-300 bg-cyan-450/10 px-1.5 py-0.5 rounded font-mono">27205</code> / <code className="text-cyan-300 bg-cyan-450/10 px-1.5 py-0.5 rounded font-mono">550</code>) to immediately load across 9 stream servers.
+                          </p>
+                        </div>
+
+                        <div className="flex flex-col gap-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] text-white/50 uppercase font-black">TMDB Movie/TV Numeric ID</label>
+                              <input 
+                                type="number"
+                                placeholder="e.g. 27205"
+                                value={openResTmdbId}
+                                onChange={(e) => setOpenResTmdbId(e.target.value.trim())}
+                                className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none font-mono focus:border-cyan-400 transition-all font-semibold shadow-[0_0_10px_rgba(0,242,255,0.02)]"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] text-white/50 uppercase font-black">Type</label>
+                              <select 
+                                value={openResImdbType}
+                                onChange={(e) => setOpenResImdbType(e.target.value as any)}
+                                className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none font-semibold cursor-pointer"
+                              >
+                                <option value="movie">Movie 🎬</option>
+                                <option value="series">TV Series 📺</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {openResImdbType === 'series' && (
+                            <div className="grid grid-cols-2 gap-4 animate-fade-in bg-white/5 p-3.5 rounded-2xl border border-white/5">
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-[10px] text-white/50 uppercase font-black font-sans">Season Number</label>
+                                <input 
+                                  type="number"
+                                  min={1}
+                                  value={openResSeason}
+                                  onChange={(e) => setOpenResSeason(Math.max(1, parseInt(e.target.value) || 1))}
+                                  className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none font-mono font-semibold"
+                                />
+                              </div>
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-[10px] text-white/50 uppercase font-black font-sans">Episode Number</label>
+                                <input 
+                                  type="number"
+                                  min={1}
+                                  value={openResEpisode}
+                                  onChange={(e) => setOpenResEpisode(Math.max(1, parseInt(e.target.value) || 1))}
+                                  className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none font-mono font-semibold"
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-4">
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] text-white/50 uppercase font-black">Title (ENGLISH)</label>
+                              <input 
+                                type="text"
+                                placeholder="e.g. Interstellar"
+                                value={openResImdbTitleEn}
+                                onChange={(e) => setOpenResImdbTitleEn(e.target.value)}
+                                className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none focus:border-cyan-400 font-semibold"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] text-white/50 uppercase font-black">Title (ARABIC)</label>
+                              <input 
+                                type="text"
+                                placeholder="..."
+                                value={openResImdbTitleAr}
+                                onChange={(e) => setOpenResImdbTitleAr(e.target.value)}
+                                className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none focus:border-cyan-400 text-right font-semibold"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex gap-3 justify-end mt-2">
+                            <button
+                              onClick={() => {
+                                if (!openResTmdbId) {
+                                  alert(lang === 'ar' ? 'الرجاء إدخال معرف TMDB ID أولاً!' : 'Please insert a TMDB ID first!');
+                                  return;
+                                }
+                                
+                                const numericId = parseInt(openResTmdbId);
+                                const baseId = openResImdbType === 'series' ? `tmdb_tv_${numericId}` : `tmdb_${numericId}`;
+                                const titleEnStr = openResImdbTitleEn || `TMDB Stream - ${openResTmdbId}`;
+                                const titleArStr = openResImdbTitleAr || titleEnStr;
+                                
+                                const fakeVid: VideoContent = {
+                                  id: baseId,
+                                  title: { en: titleEnStr, ar: titleArStr, fr: titleEnStr, de: titleEnStr, es: titleEnStr, it: titleEnStr },
+                                  description: { 
+                                    en: "Sourced through ultra-clean responsive streaming mirrors.", 
+                                    ar: "رابط مشغل ومقترن تلقائياً بواسطة المعرف الرقمي." 
+                                  },
+                                  poster: "https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=600",
+                                  banner: "https://images.unsplash.com/photo-1478760329108-5c3ed9d495a0?q=80&w=1200",
+                                  type: openResImdbType === 'series' ? 'series' : 'movie',
+                                  ageCategory: "all",
+                                  views: 125000,
+                                  rating: 4.9,
+                                  releaseYear: 2026,
+                                  genres: ["open resources", "tmdb streamer"],
+                                  languageOptions: {
+                                    dubbed: ["english", "arabic"],
+                                    subtitled: ["english", "arabic"]
+                                  },
+                                  tags: []
+                                };
+
+                                setResolvedTmdbInfo({
+                                  tmdbId: numericId,
+                                  resolvedType: openResImdbType === 'series' ? 'tv' : 'movie',
+                                  title: titleEnStr
+                                });
+                                setActiveVideo(fakeVid);
+                                if (openResImdbType === 'series') {
+                                  setCurrentEpisode({
+                                    id: `tmdb_tv_${numericId}_s${openResSeason}e${openResEpisode}`,
+                                    seasonId: openResSeason.toString(),
+                                    seriesId: baseId,
+                                    episodeNumber: openResEpisode,
+                                    title: { en: `Season ${openResSeason} Episode ${openResEpisode}`, ar: `موسم ${openResSeason} حلقة ${openResEpisode}` },
+                                    description: { en: '', ar: '' },
+                                    duration: "N/A",
+                                    videoUrl: ''
+                                  });
+                                } else {
+                                  setCurrentEpisode({
+                                    id: `dummy_tmdb_${numericId}`,
+                                    seasonId: "1",
+                                    seriesId: baseId,
+                                    episodeNumber: 1,
+                                    title: fakeVid.title,
+                                    description: fakeVid.description,
+                                    duration: "N/A",
+                                    videoUrl: ''
+                                  });
+                                }
+
+                                setIsPlaying(true);
+                                document.getElementById('video-arena')?.scrollIntoView({ behavior: 'smooth' });
+                              }}
+                              className="px-5 py-3 rounded-2xl bg-gradient-to-r from-cyan-500 to-[#009DFF] text-black text-xs font-black flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-cyan-500/20"
+                            >
+                              <Play className="w-4 h-4 fill-current text-black" />
+                              <span>{lang === 'ar' ? 'تشغيل البث فوراً 🚀' : 'Stream/Launch Now 🚀'}</span>
+                            </button>
+
+                            <button
+                              onClick={async () => {
+                                if (!openResTmdbId) {
+                                  alert(lang === 'ar' ? 'الرجاء إدخال معرف TMDB ID والمسمى الانجليزي لتسجيله!' : 'Please insert a TMDB ID and English title to import!');
+                                  return;
+                                }
+
+                                const numericId = parseInt(openResTmdbId);
+                                const titleEnStr = openResImdbTitleEn || `TMDB Item - ${openResTmdbId}`;
+                                const titleArStr = openResImdbTitleAr || titleEnStr;
+                                const baseId = openResImdbType === 'series' ? `tmdb_tv_${numericId}` : `tmdb_${numericId}`;
+                                
+                                const newVidPayload: Partial<VideoContent> = {
+                                  id: baseId,
+                                  title: { en: titleEnStr, ar: titleArStr, fr: titleEnStr, de: titleEnStr, es: titleEnStr, it: titleEnStr },
+                                  description: { 
+                                    en: "Persisted item imported via parent portal stream resolvers.", 
+                                    ar: "رابط مضاف يدوياً عبر مركز البث المفتوح اللامحدود بدقة فائقة." 
+                                  },
+                                  poster: "https://images.unsplash.com/photo-1598899134739-24c46f58b8c0?q=80&w=400",
+                                  banner: "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?q=80&w=1200",
+                                  type: openResImdbType === 'series' ? 'series' : 'movie',
+                                  views: Math.floor(Math.random() * 4000) + 120,
+                                  rating: 4.8,
+                                  releaseYear: 2026,
+                                  ageCategory: "all",
+                                  genres: ["open resources", "tmdb resolver"],
+                                  languageOptions: {
+                                    dubbed: ["english", "arabic"],
+                                    subtitled: ["english", "arabic"]
+                                  }
+                                };
+
+                                try {
+                                  const res = await fetch('/api/videos/add', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(newVidPayload)
+                                  });
+                                  const d = await res.json();
+                                  if (d.success) {
+                                    setVideos(prev => [d.video, ...prev]);
+                                    setOpenResImportStatus(`Successfully Persistent "${titleEnStr}" 🌟`);
+                                    setTimeout(() => setOpenResImportStatus(null), 4000);
+                                  }
+                                } catch(e) {
+                                  console.error(e);
+                                }
+                              }}
+                              className="px-5 py-3 rounded-2xl bg-[#1F1F2E]/80 border border-cyan-400/30 hover:border-cyan-400/60 text-white text-xs font-bold flex items-center gap-2 transition-all active:scale-95"
+                            >
+                              <Plus className="w-4 h-4 text-cyan-400" />
+                              <span>{lang === 'ar' ? 'إضافة للمكتبة لتسهيل المشاهدة 📥' : 'Import to Catalog 📥'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+                  )}
+
+                  {/* TAB 2: Direct Embed/Link Streamer */}
+                  {openResActiveSubTab === 'link' && (
+                    <div className="lg:col-span-12 bg-[#0F0F15]/95 border border-white/5 p-6 rounded-[32px] flex flex-col gap-5 text-left animate-fade-in relative backdrop-blur-strong overflow-hidden shadow-2xl">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-400/5 rounded-full blur-2xl pointer-events-none" />
+                      <div>
+                        <h3 className="text-md font-bold text-emerald-400 flex items-center gap-2">
+                          <Link className="w-5 h-5 text-emerald-400" />
+                          <span>Direct Video URL & iframe embed Loader 🌐📡</span>
+                        </h3>
+                        <p className="text-white/50 text-[11px] mt-1">
+                          Directly load any HLS (<code className="text-emerald-300 font-mono bg-emerald-500/10 px-1 rounded">.m3u8</code>), public MP4 video, or custom iframe-based streaming URL!
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+                        <div className="flex flex-col gap-4">
+                          <div className="flex flex-col gap-1.5 col-span-2">
+                            <label className="text-[10px] text-white/50 uppercase font-black">Direct Stream Link or Embed URL (required)</label>
+                            <input 
+                              type="text"
+                              required
+                              placeholder="Direct Video .mp4/.m3u8, or third-party embed / iframe link"
+                              value={openResLinkUrl}
+                              onChange={(e) => setOpenResLinkUrl(e.target.value)}
+                              className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none font-mono focus:border-emerald-400 transition-all font-semibold"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] text-white/50 uppercase font-black">Content Category</label>
+                              <select 
+                                value={openResLinkType}
+                                onChange={(e) => setOpenResLinkType(e.target.value as any)}
+                                className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl cursor-copy font-semibold"
+                              >
+                                <option value="movie">Movie 🎬</option>
+                                <option value="series">Cartoon Series 📺</option>
+                                <option value="anime">Anime ⭐</option>
+                                <option value="educational">Educational 🎓</option>
+                              </select>
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] text-white/50 uppercase font-black">Age restriction</label>
+                              <select className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl font-semibold cursor-pointer">
+                                <option value="all">All ages (العائلة)</option>
+                                <option value="3-5">3-5 Toddlers</option>
+                                <option value="6-8">6-8 Kids</option>
+                                <option value="9-12">9-12 Teens</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] text-white/50 uppercase font-black">Title (ENGLISH)</label>
+                              <input 
+                                type="text"
+                                placeholder="e.g. Vintage Cartoon Classic"
+                                value={openResLinkTitleEn}
+                                onChange={(e) => setOpenResLinkTitleEn(e.target.value)}
+                                className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none focus:border-emerald-400 font-semibold"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] text-white/50 uppercase font-black">Title (ARABIC)</label>
+                              <input 
+                                type="text"
+                                placeholder="..."
+                                value={openResLinkTitleAr}
+                                onChange={(e) => setOpenResLinkTitleAr(e.target.value)}
+                                className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none focus:border-emerald-400 text-right font-semibold"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-[10px] text-white/50 uppercase font-black font-sans">Summary / description</label>
+                            <input 
+                              type="text"
+                              placeholder="e.g. Free public domain animation cartoon shared via Internet Archive or open collections."
+                              value={openResLinkDesc}
+                              onChange={(e) => setOpenResLinkDesc(e.target.value)}
+                              className="bg-black/50 border border-white/10 text-white text-xs p-3 rounded-xl outline-none focus:border-emerald-400 font-semibold"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3 justify-end mt-4 border-t border-white/5 pt-4">
+                        <button
+                          onClick={() => {
+                            if (!openResLinkUrl) {
+                              alert(lang === 'ar' ? 'الرجاء إدخال رابط البث!' : 'Please insert a streaming link URL!');
+                              return;
+                            }
+
+                            const customId = `custom_url_${Date.now()}`;
+                            const titleEn = openResLinkTitleEn || `Direct Link Playback`;
+                            const titleAr = openResLinkTitleAr || titleEn;
+
+                            const customVideo: VideoContent = {
+                              id: customId,
+                              title: { en: titleEn, ar: titleAr, fr: titleEn, de: titleEn, es: titleEn, it: titleEn },
+                              description: { en: openResLinkDesc || "Public Open Stream URL.", ar: openResLinkDesc || "رابط بث سحابي مفتوح." },
+                              poster: "https://images.unsplash.com/photo-1542204165-65bf26472b9b?q=80&w=400",
+                              banner: "https://images.unsplash.com/photo-1574375927938-d5a98e8edd86?q=80&w=1200",
+                              type: openResLinkType,
+                              ageCategory: "all",
+                              views: 3100,
+                              rating: 4.7,
+                              releaseYear: 2026,
+                              videoUrl: openResLinkUrl,
+                              genres: ["direct", "custom link"],
+                              languageOptions: {
+                                dubbed: ["english"],
+                                subtitled: ["english"]
+                              },
+                              tags: []
+                            };
+
+                            setResolvedTmdbInfo(null);
+                            setActiveVideo(customVideo);
+                            setCurrentEpisode({
+                              id: `dummy_${customId}`,
+                              seasonId: "1",
+                              seriesId: customId,
+                              episodeNumber: 1,
+                              title: customVideo.title,
+                              description: customVideo.description,
+                              duration: "N/A",
+                              videoUrl: openResLinkUrl
+                            });
+
+                            setIsPlaying(true);
+                            document.getElementById('video-arena')?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className="px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-black flex items-center gap-2 transition-all active:scale-95 shadow-md shadow-emerald-500/15"
+                        >
+                          <Play className="w-4 h-4 fill-current text-black" />
+                          <span>{lang === 'ar' ? 'تشغيل وتجربة الرابط الآن 🚀' : 'Stream Link Now 🚀'}</span>
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            if (!openResLinkUrl) {
+                              alert(lang === 'ar' ? 'الرجاء إدخال رابط البث الخاص بك والمسمى لحفظه!' : 'Please insert stream URL and English title to import!');
+                              return;
+                            }
+
+                            const titleEn = openResLinkTitleEn || `Persistent Live Link`;
+                            const titleAr = openResLinkTitleAr || titleEn;
+                            const customId = `custom_url_${Date.now()}`;
+
+                            const newVidPayload: Partial<VideoContent> = {
+                              id: customId,
+                              title: { en: titleEn, ar: titleAr, fr: titleEn, de: titleEn, es: titleEn, it: titleEn },
+                              description: { en: openResLinkDesc || "Public Open Stream URL.", ar: openResLinkDesc || "رابط بث سحابي مفتوح." },
+                              poster: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=400",
+                              banner: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?q=80&w=1200",
+                              type: openResLinkType,
+                              ageCategory: "all",
+                              views: 120,
+                              rating: 4.7,
+                              releaseYear: 2026,
+                              videoUrl: openResLinkUrl,
+                              genres: ["direct", "custom link"],
+                              languageOptions: {
+                                dubbed: ["english"],
+                                subtitled: ["english"]
+                              }
+                            };
+
+                            try {
+                              const res = await fetch('/api/videos/add', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(newVidPayload)
+                              });
+                              const d = await res.json();
+                              if (d.success) {
+                                setVideos(prev => [d.video, ...prev]);
+                                setOpenResImportStatus(`Successfully Persistent Direct Link "${titleEn}" 🌟`);
+                                setTimeout(() => setOpenResImportStatus(null), 4000);
+                              }
+                            } catch(e) {
+                              console.error(e);
+                            }
+                          }}
+                          className="px-5 py-3 rounded-2xl bg-[#1F1F2E]/80 border border-emerald-400/30 hover:border-emerald-400/60 text-white text-xs font-bold flex items-center gap-2 transition-all active:scale-95"
+                        >
+                          <Plus className="w-4 h-4 text-emerald-400" />
+                          <span>{lang === 'ar' ? 'حفظ الرابط في المكتبة 📥' : 'Import Link to Library 📥'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 3: Search Open Repositories */}
+                  {openResActiveSubTab === 'explorer' && (
+                    <div className="lg:col-span-12 flex flex-col gap-6 animate-fade-in text-left">
+                      
+                      {/* Interactive Search Field */}
+                      <div className="bg-[#0F0F15]/95 border border-white/5 p-6 rounded-[32px] flex flex-col gap-4 relative backdrop-blur-strong overflow-hidden shadow-2xl">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-[#00F2FF]/5 rounded-full blur-2xl pointer-events-none" />
+                        <div>
+                          <h3 className="text-sm font-bold text-[#00F2FF] flex items-center gap-2 mb-1">
+                            <Globe className="w-5 h-5 text-cyan-400" />
+                            <span>Aggregated Open Repos Search</span>
+                          </h3>
+                          <p className="text-white/50 text-[10px]">
+                            Search TVmaze (TV Catalog), Jikan MAL (Anime catalog), and Internet Archive (Public domain cartoons) simultaneously.
+                          </p>
+                        </div>
+
+                        <div className="flex gap-3">
+                          <input 
+                            type="text"
+                            placeholder="Type anime title or tv show name (e.g. Popeye, Superman, Batman, Naruto)..."
+                            value={openResSearchQuery}
+                            onChange={(e) => setOpenResSearchQuery(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                // Trigger search!
+                                (async () => {
+                                  if (!openResSearchQuery.trim()) return;
+                                  setOpenResSearchLoading(true);
+                                  try {
+                                    const res = await fetch(`/api/videos/external?q=${encodeURIComponent(openResSearchQuery.trim())}`);
+                                    const data = await res.json();
+                                    if (data.success && data.videos) {
+                                      setOpenResSearchResults(data.videos);
+                                    } else {
+                                      setOpenResSearchResults([]);
+                                    }
+                                  } catch (err) {
+                                    setOpenResSearchResults([]);
+                                  } finally {
+                                    setOpenResSearchLoading(false);
+                                  }
+                                })();
+                              }
+                            }}
+                            className="bg-black/50 border border-white/10 text-white text-xs p-3.5 rounded-2xl outline-none focus:border-cyan-400 transition-all flex-1 font-sans font-semibold"
+                          />
+                          <button
+                            onClick={async () => {
+                              if (!openResSearchQuery.trim()) return;
+                              setOpenResSearchLoading(true);
+                              try {
+                                const res = await fetch(`/api/videos/external?q=${encodeURIComponent(openResSearchQuery.trim())}`);
+                                const data = await res.json();
+                                if (data.success && data.videos) {
+                                  setOpenResSearchResults(data.videos);
+                                } else {
+                                  setOpenResSearchResults([]);
+                                }
+                              } catch (err) {
+                                setOpenResSearchResults([]);
+                              } finally {
+                                setOpenResSearchLoading(false);
+                              }
+                            }}
+                            className="bg-cyan-500 hover:bg-cyan-400 font-extrabold text-black text-xs px-6 py-3.5 rounded-2xl flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-cyan-500/20"
+                          >
+                            <Search className="w-4 h-4 text-black font-extrabold" />
+                            <span>{lang === 'ar' ? 'ابحث الآن ✨' : 'Search Repos ✨'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Search Results Display List */}
+                      {openResSearchLoading ? (
+                        <div className="p-12 text-center text-xs text-[#00F2FF]/60 flex flex-col items-center justify-center gap-3 bg-[#0F0F15]/30 border border-white/5 rounded-3xl">
+                          <Sliders className="w-8 h-8 text-cyan-400 animate-spin" />
+                          <span className="font-bold tracking-widest uppercase">Contacting TVmaze, Jikan MAL, & Public Archives... Please wait</span>
+                        </div>
+                      ) : openResSearchResults.length === 0 ? (
+                        <div className="p-12 text-center text-xs text-white/30 bg-[#0F0F15]/40 border border-white/5 rounded-3xl flex flex-col items-center justify-center gap-3 leading-relaxed">
+                          <Globe className="w-8 h-8 text-white/10" />
+                          <span>Type a keyword above and hit Enter to pull items from open sources beyond TMDB!</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-4">
+                          <h4 className="text-xs text-[#00F2FF]/80 uppercase font-black tracking-widest pl-2">
+                            Found {openResSearchResults.length} matches across Open Repositories
+                          </h4>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {openResSearchResults.map((vid, idx) => {
+                              return (
+                                <div 
+                                  key={vid.id || idx}
+                                  className="bg-[#0A0A12]/95 border border-white/5 rounded-3xl p-4 flex gap-4 hover:border-cyan-400/30 transition-all group shadow-md"
+                                >
+                                  {/* Aspect Ratio Poster image wrapper */}
+                                  <div className="w-20 h-28 bg-black rounded-2xl overflow-hidden flex-shrink-0 border border-white/5 relative">
+                                    <img 
+                                      src={vid.poster || "https://images.unsplash.com/photo-1542204165-65bf26472b9b?q=80&w=200"} 
+                                      alt={vid.title.en} 
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-[8px] bg-black/70 text-pink-400 font-extrabold uppercase">
+                                      {vid.source || 'Open Repo'}
+                                    </div>
+                                  </div>
+
+                                  {/* Content info */}
+                                  <div className="flex-1 flex flex-col justify-between select-none min-w-0">
+                                    <div className="flex flex-col gap-1">
+                                      <h5 className="text-xs font-black text-white/95 truncate group-hover:text-cyan-300 transition-colors">
+                                        {vid.title[lang] || vid.title.en}
+                                      </h5>
+                                      <span className="text-[9px] text-[#00F2FF]/60 font-black tracking-wide uppercase">
+                                        {vid.type || 'Show'} • ⭐ {vid.rating || '4.5'}
+                                      </span>
+                                      <p className="text-[10px] text-white/40 line-clamp-2 leading-relaxed">
+                                        {vid.description[lang] || vid.description.en || 'No synopsis provided by repo.'}
+                                      </p>
+                                    </div>
+
+                                    {/* Action links */}
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => {
+                                          if (vid.id.startsWith('tmdb_')) {
+                                            const tmdbIdInt = parseInt(vid.id.replace('tmdb_tv_', '').replace('tmdb_', ''));
+                                            setResolvedTmdbInfo({
+                                              tmdbId: tmdbIdInt,
+                                              resolvedType: vid.type === 'series' ? 'tv' : 'movie',
+                                              title: vid.title.en
+                                            });
+                                          } else {
+                                            setResolvedTmdbInfo(null);
+                                          }
+
+                                          setActiveVideo(vid);
+                                          
+                                          // Initialize default episode for direct playback
+                                          setCurrentEpisode({
+                                            id: `dummy_${vid.id}`,
+                                            seasonId: "1",
+                                            seriesId: vid.id,
+                                            episodeNumber: 1,
+                                            title: vid.title,
+                                            description: vid.description,
+                                            duration: vid.duration || "N/A",
+                                            videoUrl: vid.videoUrl || ''
+                                          });
+
+                                          setIsPlaying(true);
+                                          document.getElementById('video-arena')?.scrollIntoView({ behavior: 'smooth' });
+                                        }}
+                                        className="bg-cyan-500/10 border border-cyan-400/25 hover:bg-cyan-500/25 hover:shadow-md hover:shadow-cyan-400/10 text-cyan-300 font-black text-[9px] px-3 py-1.5 rounded-lg inline-flex items-center gap-1 transition-all"
+                                      >
+                                        <Play className="w-3 h-3 fill-current text-cyan-300" />
+                                        <span>Stream Now</span>
+                                      </button>
+
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            const res = await fetch('/api/videos/add', {
+                                              method: 'POST',
+                                              headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({
+                                                ...vid,
+                                                views: vid.views || Math.floor(Math.random() * 4000) + 120,
+                                                rating: vid.rating || 4.5,
+                                                ageCategory: vid.ageCategory || 'all'
+                                              })
+                                            });
+                                            const d = await res.json();
+                                            if (d.success) {
+                                              setVideos(prev => [d.video, ...prev]);
+                                              setOpenResImportStatus(`Successfully Imported "${vid.title.en}" to Catalog!`);
+                                              setTimeout(() => setOpenResImportStatus(null), 4000);
+                                            }
+                                          } catch(e) {
+                                            console.error(e);
+                                          }
+                                        }}
+                                        className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-bold text-[9px] px-3 py-1.5 rounded-lg inline-flex items-center gap-1 transition-all"
+                                      >
+                                        <Plus className="w-3 h-3 text-[#00F2FF]" />
+                                        <span>Import</span>
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+                  )}
+
+                </div>
 
               </div>
             )}

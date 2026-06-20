@@ -17,6 +17,8 @@ export interface VideoContent {
     subtitled: string[]; // Languages available as subtitles
   };
   tags: string[];
+  imdbId?: string;
+  videoUrl?: string;
 }
 
 export interface Season {
