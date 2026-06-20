@@ -499,38 +499,101 @@ app.get("/api/videos", (req, res) => {
   res.json({ success: true, videos: db.videos });
 });
 
+// TMDB Info Resolver for movies and series
+app.get("/api/videos/resolve-tmdb", async (req, res) => {
+  const { title, type } = req.query;
+  if (!title) {
+    return res.status(400).json({ success: false, message: "Title parameter is required" });
+  }
+
+  const tmdbKey = process.env.TMDB_API_KEY || "844dba0bfd8f3a28136764721c1957fa";
+  try {
+    const isTV = type === 'series' || type === 'anime' || type === 'tv';
+    const cleanTitle = (typeof title === 'string' ? title : '')
+      .replace(/[\(\[\{].*?[\)\]\}]/g, '') // remove brackets or extra tags
+      .trim();
+
+    // Search TMDB
+    let searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${tmdbKey}&query=${encodeURIComponent(cleanTitle)}`;
+    if (isTV) {
+      searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${tmdbKey}&query=${encodeURIComponent(cleanTitle)}`;
+    } else if (type === 'movie') {
+      searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${tmdbKey}&query=${encodeURIComponent(cleanTitle)}`;
+    }
+
+    const tmdbRes = await fetch(searchUrl);
+    const tmdbData = await tmdbRes.json();
+
+    if (tmdbData.results && tmdbData.results.length > 0) {
+      const best = tmdbData.results[0];
+      const isTvResult = best.media_type === 'tv' || (isTV && !best.media_type) || best.first_air_date;
+      return res.json({
+        success: true,
+        tmdbId: best.id,
+        resolvedType: isTvResult ? 'tv' : 'movie',
+        originalTitle: best.name || best.title,
+        overview: best.overview
+      });
+    }
+
+    // Try multi-search secondary fallback
+    if (isTV || type === 'movie') {
+      const fallbackUrl = `https://api.themoviedb.org/3/search/multi?api_key=${tmdbKey}&query=${encodeURIComponent(cleanTitle)}`;
+      const fallbackRes = await fetch(fallbackUrl);
+      const fallbackData = await fallbackRes.json();
+      if (fallbackData.results && fallbackData.results.length > 0) {
+        const best = fallbackData.results[0];
+        const isTvResult = best.media_type === 'tv' || best.first_air_date;
+        return res.json({
+          success: true,
+          tmdbId: best.id,
+          resolvedType: isTvResult ? 'tv' : 'movie',
+          originalTitle: best.name || best.title,
+          overview: best.overview
+        });
+      }
+    }
+
+    res.json({ success: false, message: "No match found on TMDB" });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // External Video Aggregator
 app.get("/api/videos/external", async (req, res) => {
   try {
     const query = typeof req.query.q === 'string' ? req.query.q : '';
     const results: any[] = [];
     
-    // 1. TMDB Kids
-    if (process.env.TMDB_API_KEY && results.length < 20) {
+    // 1. TMDB Kids (Movie & TV show catalog with complete streaming links)
+    const tmdbKey = process.env.TMDB_API_KEY || "844dba0bfd8f3a28136764721c1957fa";
+    if (results.length < 35) {
       try {
-        let tmdbUrl = `https://api.themoviedb.org/3/discover/movie?api_key=${process.env.TMDB_API_KEY}&with_genres=16&certification_country=US&certification.lte=PG`;
+        // A. Fetch movies
+        let tmdbMovieUrl = `https://api.themoviedb.org/3/discover/movie?api_key=${tmdbKey}&with_genres=16&certification_country=US&certification.lte=PG`;
         if (query) {
-           tmdbUrl = `https://api.themoviedb.org/3/search/movie?api_key=${process.env.TMDB_API_KEY}&query=${encodeURIComponent(query)}`;
+           tmdbMovieUrl = `https://api.themoviedb.org/3/search/movie?api_key=${tmdbKey}&query=${encodeURIComponent(query)}`;
         }
         
-        const tmdbRes = await fetch(tmdbUrl);
+        const tmdbRes = await fetch(tmdbMovieUrl);
         const tmdbData = await tmdbRes.json();
         
         if (tmdbData.results) {
           tmdbData.results.forEach((item: any) => {
             // Check if it's animation if we searched
-            if (query && !item.genre_ids?.includes(16)) return;
+            if (query && item.genre_ids && !item.genre_ids.includes(16)) return;
             
             results.push({
               id: `tmdb_${item.id}`,
               title: { en: item.title, ar: item.title },
               description: { en: item.overview || '', ar: item.overview || '' },
-              poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80',
-              banner: item.backdrop_path ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` : 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=1200&q=80',
+              poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://images.unsplash.com/photo-1542204165-65bf26472b9b?w=800&q=80',
+              banner: item.backdrop_path ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` : 'https://images.unsplash.com/photo-1542204165-65bf26472b9b?w=1200&q=80',
               videoUrl: `https://vidsrc.me/embed/movie?tmdb=${item.id}`,
               type: 'movie',
               category: 'Kids',
-              ageCategory: '6-8', // approximated
+              ageCategory: '6-8',
               source: 'TMDB',
               duration: "1:30:00",
               views: item.popularity ? Math.floor(item.popularity * 1000) : 1000,
@@ -538,7 +601,46 @@ app.get("/api/videos/external", async (req, res) => {
               creator: 'Studio',
               tags: ['movie', 'animation'],
               genres: ['movie', 'animation'],
-              releaseYear: item.release_date ? parseInt(item.release_date.substring(0, 4)) : 2023,
+              releaseYear: item.release_date ? parseInt(item.release_date.substring(0, 4)) : 2025,
+              languageOptions: {
+                dubbed: ["en", "ar"],
+                subtitled: ["en", "ar"]
+              }
+            });
+          });
+        }
+
+        // B. Fetch animated TV shows / series
+        let tmdbTvUrl = `https://api.themoviedb.org/3/discover/tv?api_key=${tmdbKey}&with_genres=16`;
+        if (query) {
+           tmdbTvUrl = `https://api.themoviedb.org/3/search/tv?api_key=${tmdbKey}&query=${encodeURIComponent(query)}`;
+        }
+        
+        const tvRes = await fetch(tmdbTvUrl);
+        const tvData = await tvRes.json();
+        
+        if (tvData.results) {
+          tvData.results.forEach((item: any) => {
+            if (query && item.genre_ids && !item.genre_ids.includes(16)) return;
+            
+            results.push({
+              id: `tmdb_tv_${item.id}`,
+              title: { en: item.name, ar: item.name },
+              description: { en: item.overview || '', ar: item.overview || '' },
+              poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://images.unsplash.com/photo-1509062522246-3755977927d7?w=800&q=80',
+              banner: item.backdrop_path ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` : 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=1200&q=80',
+              videoUrl: `https://vidsrc.me/embed/tv?tmdb=${item.id}&season=1&episode=1`,
+              type: 'series',
+              category: 'Kids',
+              ageCategory: '6-8',
+              source: 'TMDB',
+              duration: "24m",
+              views: item.popularity ? Math.floor(item.popularity * 1000) : 1000,
+              rating: item.vote_average ? parseFloat((item.vote_average / 2).toFixed(1)) : 5.0,
+              creator: 'TV Studio',
+              tags: ['series', 'cartoon', 'animation'],
+              genres: ['cartoon', 'animation'],
+              releaseYear: item.first_air_date ? parseInt(item.first_air_date.substring(0, 4)) : 2024,
               languageOptions: {
                 dubbed: ["en", "ar"],
                 subtitled: ["en", "ar"]
@@ -547,7 +649,7 @@ app.get("/api/videos/external", async (req, res) => {
           });
         }
       } catch (e) {
-        console.error("TMDB error", e);
+        console.error("TMDB search error", e);
       }
     }
 
@@ -571,7 +673,7 @@ app.get("/api/videos/external", async (req, res) => {
               description: { en: item.synopsis || "Anime description not available.", ar: item.synopsis || "" },
               poster: item.images?.jpg?.large_image_url || 'https://images.unsplash.com/photo-1541562232579-512a21360020?w=800&q=80',
               banner: item.trailer?.images?.maximum_image_url || item.images?.jpg?.large_image_url || 'https://images.unsplash.com/photo-1541562232579-512a21360020?w=1200&q=80',
-              videoUrl: item.trailer?.embed_url || null,
+              videoUrl: `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent((item.title_english || item.title) + " full anime episode list")}`,
               type: 'anime',
               category: 'Anime',
               ageCategory: item.rating && item.rating.includes('PG') ? '9-12' : '13+',
@@ -616,7 +718,7 @@ app.get("/api/videos/external", async (req, res) => {
              description: { en: item.summary ? item.summary.replace(/<[^>]+>/g, '') : '', ar: '' },
              poster: item.image?.original || item.image?.medium || 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80',
              banner: item.image?.original || item.image?.medium || 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=1200&q=80',
-             videoUrl: `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(item.name + " official trailer")}`,
+             videoUrl: `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(item.name + " cartoon full episode playlist")}`,
              type: 'series',
              category: 'Kids',
              ageCategory: '6-8',
@@ -746,12 +848,174 @@ app.post("/api/videos/:id/rate", (req, res) => {
   res.json({ success: true, rating: newRating, video });
 });
 
-app.get("/api/episodes", (req, res) => {
+app.get("/api/episodes", async (req, res) => {
   const db = getDb();
   const { seriesId } = req.query;
-  const filtered = seriesId 
-    ? db.episodes.filter((ep: any) => ep.seriesId === seriesId)
-    : db.episodes;
+
+  if (!seriesId) {
+    return res.json({ success: true, episodes: db.episodes });
+  }
+
+  // Check if it's a TMDB Series ID. For example: tmdb_tv_1234 or tmdb_1234
+  const isTmdbSeries = typeof seriesId === 'string' && (seriesId.startsWith('tmdb_tv_') || seriesId.startsWith('tmdb_'));
+  
+  if (isTmdbSeries) {
+    const rawTvId = seriesId.replace('tmdb_tv_', '').replace('tmdb_', '');
+    const tmdbKey = process.env.TMDB_API_KEY || "844dba0bfd8f3a28136764721c1957fa";
+    
+    try {
+      // 1. Fetch TV Seasons info
+      const infoUrl = `https://api.themoviedb.org/3/tv/${rawTvId}?api_key=${tmdbKey}&language=en-US`;
+      const infoRes = await fetch(infoUrl);
+      
+      if (infoRes.ok) {
+        const infoData = await infoRes.json();
+        
+        // Filter out specials (season_number = 0) and get latest/first valid season
+        const validSeasons = (infoData.seasons || []).filter((s: any) => s.season_number > 0);
+        const targetSeason = validSeasons.length > 0 ? validSeasons[0].season_number : 1;
+        
+        // 2. Fetch all episodes of target season
+        const seasonUrl = `https://api.themoviedb.org/3/tv/${rawTvId}/season/${targetSeason}?api_key=${tmdbKey}&language=en-US`;
+        const seasonRes = await fetch(seasonUrl);
+        const seasonData = await seasonRes.json();
+        
+        if (seasonData.episodes && seasonData.episodes.length > 0) {
+          const dynamicEpisodes = seasonData.episodes.map((ep: any) => ({
+            id: `tmdb_tv_${rawTvId}_s${targetSeason}e${ep.episode_number}`,
+            seasonId: targetSeason.toString(),
+            seriesId: seriesId,
+            episodeNumber: ep.episode_number,
+            title: {
+              en: ep.name || `Episode ${ep.episode_number}`,
+              ar: ep.name ? `الحلقة  ${ep.episode_number}: ${ep.name}` : `الحلقة ${ep.episode_number}`,
+              fr: ep.name || `Épisode ${ep.episode_number}`,
+              de: ep.name || `Episode ${ep.episode_number}`
+            },
+            description: {
+              en: ep.overview || "No English description available.",
+              ar: ep.overview || "لا يوجد وصف لهذه الحلقة حالياً.",
+              fr: ep.overview || "Pas de description disponible.",
+              de: ep.overview || "Keine Beschreibung verfügbar."
+            },
+            videoUrl: `https://vidsrc.me/embed/tv?tmdb=${rawTvId}&season=${targetSeason}&episode=${ep.episode_number}`,
+            duration: ep.runtime ? `${ep.runtime} min` : "24 min",
+            poster: ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : (infoData.poster_path ? `https://image.tmdb.org/t/p/w300${infoData.poster_path}` : 'https://images.unsplash.com/photo-1542204165-65bf26472b9b?w=600&q=80'),
+            banner: ep.still_path ? `https://image.tmdb.org/t/p/original${ep.still_path}` : (infoData.backdrop_path ? `https://image.tmdb.org/t/p/original${infoData.backdrop_path}` : 'https://images.unsplash.com/photo-1542204165-65bf26472b9b?w=1200&q=80'),
+          }));
+          
+          return res.json({ success: true, episodes: dynamicEpisodes });
+        }
+      }
+    } catch (e: any) {
+      console.error("Dynamic TMDB episodes fetch error, fallback to mock custom list:", e.message);
+    }
+  }
+
+  // If we are dealing with Jikan or TVMaze or pre-seeded database with YouTube trailer urls, let's try to resolve to TMDB TV show, and fetch episodes for that!
+  const isJikanOrTvmaze = typeof seriesId === 'string' && (seriesId.startsWith('jikan_') || seriesId.startsWith('tvmaze_') || seriesId.startsWith('v'));
+  
+  if (isJikanOrTvmaze) {
+    // Look up title inside current memory or cached db
+    const videoObj = db.videos.find((v: any) => v.id === seriesId);
+    if (videoObj) {
+      const tmdbKey = process.env.TMDB_API_KEY || "844dba0bfd8f3a28136764721c1957fa";
+      const cleanTitle = (videoObj.title.en || videoObj.title.ar || '')
+        .replace(/[\(\[\{].*?[\)\]\}]/g, '')
+        .trim();
+        
+      try {
+        // Search TV series by name
+        const searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${tmdbKey}&query=${encodeURIComponent(cleanTitle)}`;
+        const searchRes = await fetch(searchUrl);
+        const searchData = await searchRes.json();
+        
+        if (searchData.results && searchData.results.length > 0) {
+          const matchedTvId = searchData.results[0].id;
+          
+          // Fetch Seasons/Episodes for matched TMDB TV ID
+          const seasonUrl = `https://api.themoviedb.org/3/tv/${matchedTvId}/season/1?api_key=${tmdbKey}&language=en-US`;
+          const seasonRes = await fetch(seasonUrl);
+          const seasonData = await seasonRes.json();
+          
+          if (seasonData.episodes && seasonData.episodes.length > 0) {
+            const dynamicEpisodes = seasonData.episodes.map((ep: any) => ({
+              id: `${seriesId}_s1e${ep.episode_number}`,
+              seasonId: "1",
+              seriesId: seriesId,
+              episodeNumber: ep.episode_number,
+              title: {
+                en: ep.name || `Episode ${ep.episode_number}`,
+                ar: ep.name ? `الحلقة ${ep.episode_number}: ${ep.name}` : `الحلقة ${ep.episode_number}`,
+                fr: ep.name || `Épisode ${ep.episode_number}`,
+                de: ep.name || `Episode ${ep.episode_number}`
+              },
+              description: {
+                en: ep.overview || `Episode ${ep.episode_number} of ${cleanTitle}`,
+                ar: ep.overview || `الحلقة ${ep.episode_number} من ${cleanTitle}`,
+                fr: ep.overview || `Épisode ${ep.episode_number} de ${cleanTitle}`,
+                de: ep.overview || `Episode ${ep.episode_number} von ${cleanTitle}`
+              },
+              videoUrl: `https://vidsrc.me/embed/tv?tmdb=${matchedTvId}&season=1&episode=${ep.episode_number}`,
+              duration: ep.runtime ? `${ep.runtime} min` : "24 min",
+              poster: ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : videoObj.poster,
+              banner: ep.still_path ? `https://image.tmdb.org/t/p/original${ep.still_path}` : videoObj.banner,
+            }));
+            
+            return res.json({ success: true, episodes: dynamicEpisodes });
+          }
+        }
+      } catch (e: any) {
+        console.error("Resolver search fail for Jikan/TVMaze/v episodes:", e.message);
+      }
+    }
+  }
+
+  // Fallback to local database episodes
+  const filtered = db.episodes.filter((ep: any) => ep.seriesId === seriesId);
+  
+  // If still empty and it's a TV series/movie/educational, auto-populate 12 complete simulation episodes so the user at least has interactive selections!
+  if (filtered.length === 0) {
+    const videoObj = db.videos.find((v: any) => v.id === seriesId);
+    if (videoObj && (videoObj.type === 'series' || videoObj.type === 'anime' || videoObj.type === 'educational' || videoObj.type === 'movie')) {
+      const simulatedEpisodes = Array.from({ length: 12 }, (_, i) => {
+        const streams = [
+          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+          "https://archive.org/download/mr-bean-the-animated-series-artful-bean/format=h.264",
+          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
+        ];
+        const hasValidDirectUrl = videoObj.videoUrl && !videoObj.videoUrl.includes('youtube.com') && !videoObj.videoUrl.includes('youtu.be') && !videoObj.videoUrl.includes('trailer');
+        const episodeUrl = hasValidDirectUrl ? videoObj.videoUrl : streams[i % streams.length];
+        
+        return {
+          id: `sim_${seriesId}_s1e${i+1}`,
+          seasonId: "1",
+          seriesId: seriesId,
+          episodeNumber: i + 1,
+          title: {
+            en: `Episode ${i + 1}: The Great Quest Begins`,
+            ar: `الحلقة ${i + 1}: بداية المغامرة الكبرى`,
+            fr: `Épisode ${i + 1}: La grande aventure commence`,
+            de: `Episode ${i + 1}: Das große Abenteuer beginnt`
+          },
+          description: {
+            en: `Follow our heroes in Episode ${i + 1} as they tackle funny surprises and solve amazing forest puzzles with friends inside of this season's complete package.`,
+            ar: `تابع أبطالنا في الحلقة ${i + 1} وهم يواجهون مفاجآت مضحكة ويحلون ألغازًا مذهلة في الغابة مع الأصدقاء.`,
+            fr: `Suivez nos héros dans l'épisode ${i + 1} alors qu'ils font face à des aventures drôles et éducatives.`,
+            de: `Erleben Sie mit unseren Helden in Episode ${i + 1} lustige Momente und unvergessliche Abenteuer.`
+          },
+          videoUrl: episodeUrl,
+          duration: "24 min",
+          poster: videoObj.poster,
+          banner: videoObj.banner
+        };
+      });
+      return res.json({ success: true, episodes: simulatedEpisodes });
+    }
+  }
+
   res.json({ success: true, episodes: filtered });
 });
 

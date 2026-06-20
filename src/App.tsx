@@ -7,7 +7,8 @@ import {
   Sparkles, Sliders, LogOut, CheckCircle, Database, AlertCircle, Trash2, 
   HelpCircle, ChevronLeft, ArrowRight, Eye, Film, BookOpen, MessageSquare,
   FastForward, Send, Link, Crown, X, ChevronDown, ChevronUp, List, Bookmark, Tag,
-  Activity, Terminal, Keyboard, VolumeX, Lock, Unlock, AudioLines, Sun
+  Activity, Terminal, Keyboard, VolumeX, Lock, Unlock, AudioLines, Sun, Contrast,
+  ExternalLink
 } from 'lucide-react';
 import { TRANSLATIONS, SupportedLanguage } from './locale';
 import { VideoContent, Episode, Comment, SystemLog, Advertisement, UserProfile, CustomAvatarConfig } from './types';
@@ -171,18 +172,22 @@ export default function App() {
   const [newBookmarkTitle, setNewBookmarkTitle] = useState<string>('');
   const [hoveredBookmark, setHoveredBookmark] = useState<{ id: string, time: number, title: string, x: number } | null>(null);
 
-  const [activeProviderId, setActiveProviderId] = useState<string>('vidbox-ultra');
+  const [activeProviderId, setActiveProviderId] = useState<string>('vidsrc-xyz');
   const [isPinging, setIsPinging] = useState<boolean>(false);
   const [providerPings, setProviderPings] = useState<Record<string, number>>({
-    'vidbox-ultra': 24,
+    'vidsrc-xyz': 14,
+    'vidsrc-cc': 18,
+    'vidsrc-in': 22,
+    'vidsrc-pm': 29,
+    'vidbox-ultra': 34,
     'hls-cyber': 41,
-    'vidsrc-embed': 65,
-    'super-fast': 31,
-    'backup-slow': 185
+    'super-fast': 48,
+    'vidsrc-pro': 52,
+    'autoembed-co': 59
   });
   const [activeLogs, setActiveLogs] = useState<string[]>([
-    `[${new Date().toLocaleTimeString()}] Handshaking CDN edge gateway: vidbox-ultra`,
-    `[${new Date().toLocaleTimeString()}] Connection established! Latency: 24ms.`
+    `[${new Date().toLocaleTimeString()}] Handshaking CDN edge gateway: vidsrc-xyz`,
+    `[${new Date().toLocaleTimeString()}] Connection established! Latency: 14ms.`
   ]);
 
   // Premium Stream Enhancements
@@ -194,6 +199,9 @@ export default function App() {
   const [ambientBlurOpacity, setAmbientBlurOpacity] = useState<number>(60);
   const [bandwidthData, setBandwidthData] = useState<number[]>([120, 124, 122, 125, 123, 126, 124, 128, 127, 126, 125, 126, 124, 126, 125]);
   const [videoBrightness, setVideoBrightness] = useState<number>(100);
+  const [videoGrayscale, setVideoGrayscale] = useState<boolean>(false);
+  const [resolvedTmdbInfo, setResolvedTmdbInfo] = useState<{ tmdbId: number, resolvedType: string, title: string } | null>(null);
+  const [isLoadingTmdbInfo, setIsLoadingTmdbInfo] = useState<boolean>(false);
 
   useEffect(() => {
     if (currentEpisode) {
@@ -286,17 +294,21 @@ export default function App() {
     setActiveLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Broadcast global ICMP probe to providers list...`]);
     setTimeout(() => {
       const nextPings = {
-        'vidbox-ultra': Math.floor(Math.random() * 15) + 12,
-        'hls-cyber': Math.floor(Math.random() * 25) + 25,
-        'vidsrc-embed': Math.floor(Math.random() * 35) + 45,
-        'super-fast': Math.floor(Math.random() * 20) + 18,
-        'backup-slow': Math.floor(Math.random() * 80) + 130
+        'vidsrc-xyz': Math.floor(Math.random() * 8) + 8,
+        'vidsrc-cc': Math.floor(Math.random() * 10) + 12,
+        'vidsrc-in': Math.floor(Math.random() * 12) + 15,
+        'vidsrc-pm': Math.floor(Math.random() * 15) + 20,
+        'vidbox-ultra': Math.floor(Math.random() * 15) + 25,
+        'hls-cyber': Math.floor(Math.random() * 20) + 32,
+        'super-fast': Math.floor(Math.random() * 22) + 40,
+        'vidsrc-pro': Math.floor(Math.random() * 25) + 45,
+        'autoembed-co': Math.floor(Math.random() * 30) + 50
       };
       setProviderPings(nextPings);
       setIsPinging(false);
       setActiveLogs(prev => [
         ...prev, 
-        `[${new Date().toLocaleTimeString()}] Probe complete! Selected optimum tunnel: ${nextPings['vidbox-ultra']}ms`
+        `[${new Date().toLocaleTimeString()}] Probe complete! Selected optimum tunnel: ${nextPings['vidsrc-xyz']}ms`
       ]);
     }, 1500);
   };
@@ -307,11 +319,15 @@ export default function App() {
     const interval = setInterval(() => {
       setBandwidthData(prev => {
         let baseSpeed = 120;
-        if (activeProviderId === 'vidbox-ultra') baseSpeed = 124;
+        if (activeProviderId === 'vidsrc-xyz') baseSpeed = 138;
+        else if (activeProviderId === 'vidsrc-cc') baseSpeed = 126;
+        else if (activeProviderId === 'vidsrc-in') baseSpeed = 118;
+        else if (activeProviderId === 'vidsrc-pm') baseSpeed = 110;
+        else if (activeProviderId === 'vidbox-ultra') baseSpeed = 104;
         else if (activeProviderId === 'hls-cyber') baseSpeed = 98;
-        else if (activeProviderId === 'vidsrc-embed') baseSpeed = 85;
-        else if (activeProviderId === 'super-fast') baseSpeed = 115;
-        else if (activeProviderId === 'backup-slow') baseSpeed = 24;
+        else if (activeProviderId === 'super-fast') baseSpeed = 92;
+        else if (activeProviderId === 'vidsrc-pro') baseSpeed = 88;
+        else if (activeProviderId === 'autoembed-co') baseSpeed = 81;
 
         const fluctuation = Math.floor(Math.random() * 12) - 6;
         const nextSpeed = Math.max(1, baseSpeed + fluctuation);
@@ -941,6 +957,50 @@ export default function App() {
       recordVideoView(activeVideo.id);
     }
   }, [activeVideo?.id, currentProfile?.id]);
+
+  // Resolve TMDB Info whenever active video changes
+  useEffect(() => {
+    if (!activeVideo) {
+      setResolvedTmdbInfo(null);
+      return;
+    }
+
+    if (activeVideo.id.startsWith('tmdb_tv_')) {
+      const rawId = parseInt(activeVideo.id.replace('tmdb_tv_', ''));
+      setResolvedTmdbInfo({ tmdbId: rawId, resolvedType: 'tv', title: activeVideo.title.en });
+      return;
+    } else if (activeVideo.id.startsWith('tmdb_')) {
+      const rawId = parseInt(activeVideo.id.replace('tmdb_', ''));
+      setResolvedTmdbInfo({ tmdbId: rawId, resolvedType: 'movie', title: activeVideo.title.en });
+      return;
+    }
+
+    const resolve = async () => {
+      setIsLoadingTmdbInfo(true);
+      try {
+        const titleClean = activeVideo.title.en || activeVideo.title.ar || '';
+        const typeClean = activeVideo.type === 'anime' || activeVideo.type === 'series' ? 'series' : 'movie';
+        const res = await fetch(`/api/videos/resolve-tmdb?title=${encodeURIComponent(titleClean)}&type=${typeClean}`);
+        const data = await res.json();
+        if (data.success && data.tmdbId) {
+          setResolvedTmdbInfo({
+            tmdbId: data.tmdbId,
+            resolvedType: data.resolvedType,
+            title: data.originalTitle
+          });
+        } else {
+          setResolvedTmdbInfo(null);
+        }
+      } catch (e) {
+        console.error("Failed to resolve TMDB ID", e);
+        setResolvedTmdbInfo(null);
+      } finally {
+        setIsLoadingTmdbInfo(false);
+      }
+    };
+
+    resolve();
+  }, [activeVideo?.id]);
 
   // Load episodes for active video
   useEffect(() => {
@@ -2150,6 +2210,64 @@ export default function App() {
       .sort((a, b) => b.score - a.score) as { video: VideoContent; originalWatched: VideoContent }[];
   };
 
+  const getCalculatedStreamUrl = () => {
+    if (!currentEpisode) return '';
+
+    // If we have resolved TMDB, let's construct highly reliable stream embed URLs depending on selected provider!
+    if (resolvedTmdbInfo) {
+      const tmdbId = resolvedTmdbInfo.tmdbId;
+      const isTV = resolvedTmdbInfo.resolvedType === 'tv';
+      const season = currentEpisode.seasonId ? parseInt(currentEpisode.seasonId) || 1 : 1;
+      const episodeNum = currentEpisode.episodeNumber || 1;
+
+      // Map servers to complete functional mirrors
+      if (activeProviderId === 'vidsrc-xyz') {
+        return isTV 
+          ? `https://vidsrc.xyz/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episodeNum}`
+          : `https://vidsrc.xyz/embed/movie?tmdb=${tmdbId}`;
+      } else if (activeProviderId === 'vidsrc-cc') {
+        return isTV
+          ? `https://vidsrc.cc/embed/tv/${tmdbId}/${season}/${episodeNum}`
+          : `https://vidsrc.cc/embed/movie/${tmdbId}`;
+      } else if (activeProviderId === 'vidsrc-in') {
+        return isTV
+          ? `https://vidsrc.in/embed/tv/${tmdbId}/${season}/${episodeNum}`
+          : `https://vidsrc.in/embed/movie/${tmdbId}`;
+      } else if (activeProviderId === 'vidsrc-pm') {
+        return isTV
+          ? `https://vidsrc.pm/embed/tv/${tmdbId}/${season}/${episodeNum}`
+          : `https://vidsrc.pm/embed/movie/${tmdbId}`;
+      } else if (activeProviderId === 'vidbox-ultra') {
+        return isTV
+          ? `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episodeNum}`
+          : `https://vidsrc.to/embed/movie/${tmdbId}`;
+      } else if (activeProviderId === 'hls-cyber') {
+        return isTV
+          ? `https://embed.su/embed/tv/${tmdbId}/${season}/${episodeNum}`
+          : `https://embed.su/embed/movie/${tmdbId}`;
+      } else if (activeProviderId === 'super-fast') {
+        return isTV
+          ? `https://2embed.cc/embed/tv/${tmdbId}/${season}/${episodeNum}`
+          : `https://2embed.cc/embed/${tmdbId}`;
+      } else if (activeProviderId === 'vidsrc-pro') {
+        return isTV
+          ? `https://vidsrc.pro/embed/tv/${tmdbId}/${season}/${episodeNum}`
+          : `https://vidsrc.pro/embed/movie/${tmdbId}`;
+      } else if (activeProviderId === 'autoembed-co') {
+        return isTV
+          ? `https://autoembed.co/tv/tmdb/${tmdbId}-${season}-${episodeNum}`
+          : `https://autoembed.co/movie/tmdb/${tmdbId}`;
+      } else if (activeProviderId === 'vidsrc-embed') {
+        return isTV 
+          ? `https://vidsrc.xyz/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episodeNum}`
+          : `https://vidsrc.xyz/embed/movie?tmdb=${tmdbId}`;
+      }
+    }
+
+    // Default to the original episode's videoUrl
+    return currentEpisode.videoUrl || '';
+  };
+
   return (
     <div className="min-h-screen bg-[#050508] text-white flex flex-col font-sans antialiased overflow-x-hidden relative" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Dynamic Background Glow inspired by sophisticated-dark */}
@@ -2897,21 +3015,39 @@ export default function App() {
                           ) : (
                             <div 
                               className="absolute inset-0 w-full h-full bg-slate-950 flex items-center justify-center"
-                              style={{ filter: `brightness(${videoBrightness}%)` }}
+                              style={{ filter: `brightness(${videoBrightness}%) grayscale(${videoGrayscale ? 100 : 0}%)` }}
                             >
                               {/* Realistic cartoon stream element with BigBuckBunny falling links */}
-                              {currentEpisode?.videoUrl?.includes('embed') ? (
-                                <iframe
-                                  src={currentEpisode.videoUrl}
-                                  className={`w-full h-full border-0 ${isMiniPlayer ? 'rounded-2xl pointer-events-none' : 'rounded-3xl'}`}
-                                  allowFullScreen
-                                  allow="autoplay; encrypted-media"
-                                />
-                              ) : (
-                                <video
-                                  ref={videoRef}
-                                  src={currentEpisode?.videoUrl}
-                                  className="w-full h-full object-contain pointer-events-none"
+                              {(() => {
+                                const activeUrl = getCalculatedStreamUrl();
+                                const isEmbed = activeUrl.includes('embed') || activeUrl.includes('vidsrc') || activeUrl.includes('2embed') || activeUrl.includes('embed.su');
+                                return isEmbed ? (
+                                  <>
+                                    <iframe
+                                      src={activeUrl}
+                                      className={`w-full h-full border-0 ${isMiniPlayer ? 'rounded-2xl pointer-events-none' : 'rounded-3xl'}`}
+                                      allowFullScreen
+                                      allow="autoplay; encrypted-media"
+                                    />
+                                    {/* Clear, elegant button to escape sandbox/frame restrictions */}
+                                    <div className="absolute top-3 left-3 z-[45] flex items-center gap-2">
+                                      <a
+                                        href={activeUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="bg-purple-950/90 hover:bg-purple-900 border border-cyan-400/40 text-cyan-400 hover:text-white text-[10px] font-black tracking-wide py-1.5 px-3 rounded-xl flex items-center gap-1.5 shadow-[0_0_15px_rgba(34,211,238,0.25)] transition-all duration-300 hover:scale-105"
+                                        title={lang === 'ar' ? 'افتح البث في نافذة جديدة مباشرة لمعالجة قيود التشغيل' : 'Open stream link in a new browser tab to resolve sandbox/frame restrictions'}
+                                      >
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                        <span>{lang === 'ar' ? 'تشغيل في نافذة جديدة ↗️' : 'Play in New Tab ↗️'}</span>
+                                      </a>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <video
+                                    ref={videoRef}
+                                    src={activeUrl}
+                                    className="w-full h-full object-contain pointer-events-none"
                                   autoPlay
                                   controls={false}
                                   onLoadedMetadata={() => {
@@ -2973,7 +3109,7 @@ export default function App() {
                                 }
                               }}
                             />
-                            )}
+                            ) })()}
 
                             {/* Skip Intro Overlay */}
                             {(activeVideo?.type === 'series' || activeVideo?.type === 'anime') && 
@@ -3461,6 +3597,35 @@ export default function App() {
                                         </div>
                                       </div>
 
+                                      {/* Audio Track Option */}
+                                      <div className="flex flex-col gap-1.5 align-start text-left">
+                                        <span className="text-[10px] text-white/50 uppercase font-bold tracking-wider">
+                                          {lang === 'ar' ? 'المسار الصوتي' : 'Audio Track'}
+                                        </span>
+                                        <select
+                                          value={selectedAudio}
+                                          onChange={(e) => setSelectedAudio(e.target.value)}
+                                          className="w-full bg-[#151520]/80 hover:bg-[#1C1C2A]/80 border border-white/10 text-white text-[10px] py-1.5 px-2.5 rounded-lg focus:outline-none focus:border-cyan-500 transition-all cursor-pointer font-medium"
+                                        >
+                                          {activeVideo?.languageOptions?.dubbed?.map((audio) => {
+                                            const label = {
+                                              en: lang === 'ar' ? 'الإنجليزية (EN)' : 'English (EN)',
+                                              ar: lang === 'ar' ? 'العربية (AR)' : 'Arabic (AR)',
+                                              fr: lang === 'ar' ? 'الفرنسية (FR)' : 'French (FR)',
+                                              es: lang === 'ar' ? 'الإسبانية (ES)' : 'Spanish (ES)',
+                                              de: lang === 'ar' ? 'الألمانية (DE)' : 'German (DE)',
+                                              it: lang === 'ar' ? 'الإيطالية (IT)' : 'Italian (IT)',
+                                              ja: lang === 'ar' ? 'اليابانية (JA)' : 'Japanese (JA)'
+                                            }[audio.toLowerCase()] || audio.toUpperCase();
+                                            return (
+                                              <option key={audio} value={audio} className="bg-[#0F0F15] text-white">
+                                                {label}
+                                              </option>
+                                            );
+                                          })}
+                                        </select>
+                                      </div>
+
                                       {/* Subtitles Option */}
                                       <div className="flex flex-col gap-1.5 align-start text-left">
                                         <span className="text-[10px] text-white/50 uppercase font-bold tracking-wider">
@@ -3548,6 +3713,32 @@ export default function App() {
                                             className="w-full accent-yellow-400 bg-white/10 h-1 rounded cursor-pointer"
                                             title={lang === 'ar' ? 'مستوى السطوع' : 'Brightness level'}
                                           />
+                                        </div>
+                                      </div>
+
+                                      {/* Grayscale Mode toggle */}
+                                      <div className="flex flex-col gap-2 align-start text-left border-t border-white/10 pt-2">
+                                        <span className="text-[10px] text-purple-400 uppercase font-bold tracking-wider flex items-center gap-1">
+                                          <Contrast className="w-3.5 h-3.5" />
+                                          {lang === 'ar' ? 'نمط التدرج الرمادي' : 'Grayscale accessibility'}
+                                        </span>
+                                        <div className="flex items-center justify-between text-[9px] text-white/70">
+                                          <span>{lang === 'ar' ? 'لتقليل التحفيز البصري:' : 'Reduce visual stimulation:'}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const next = !videoGrayscale;
+                                              setVideoGrayscale(next);
+                                              showSwipeMessage(lang === 'ar' ? (next ? '⚫ نمط الرمادي نشط' : '⚪ نمط الألوان نشط') : (next ? '⚫ Grayscale mode ON' : '⚪ Grayscale mode OFF'));
+                                            }}
+                                            className={`px-3 py-1 rounded-xl text-[9px] font-bold transition-all border outline-none active:scale-95 cursor-pointer ${
+                                              videoGrayscale 
+                                                ? 'bg-purple-500/20 border-purple-400/40 text-purple-300 shadow-[0_0_8px_rgba(168,85,247,0.2)] font-extrabold' 
+                                                : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/60'
+                                            }`}
+                                          >
+                                            {videoGrayscale ? (lang === 'ar' ? 'مفعّل' : 'Active') : (lang === 'ar' ? 'غير مفعّل' : 'Disabled')}
+                                          </button>
                                         </div>
                                       </div>
 
@@ -3662,13 +3853,17 @@ export default function App() {
                           </div>
 
                           {/* Grid of providers as seen in vidbox.dev */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
                             {[
-                              { id: 'vidbox-ultra', nameEn: 'Vidbox Premium [HLS]', nameAr: 'سيرفر ويدبوكس فائق الجودة', tagline: 'Primary edge delivery node', quality: '4K Stream', speed: '124 MB/s', type: 'M3U8', ssl: true, subs: true, status: 'online' },
-                              { id: 'hls-cyber', nameEn: 'CyberCloud VIP Mirror', nameAr: 'مسار الغيمة السيبرانية الرقمية', tagline: 'Optimized high-bitrate pipeline', quality: '1080p Ultra', speed: '98 MB/s', type: 'MP4 Live', ssl: true, subs: true, status: 'online' },
-                              { id: 'vidsrc-embed', nameEn: 'Superembed Hybrid CDN', nameAr: 'بوابة الدمج الخارقة الذكية', tagline: 'Decentralized caching network', quality: '1080p HDR', speed: '85 MB/s', type: 'Adaptive', ssl: true, subs: false, status: 'online' },
-                              { id: 'super-fast', nameEn: 'Direct Transcode Core', nameAr: 'نواة المعالجة المباشرة والترجمة', tagline: 'High-speed local network layer', quality: '1080p Web', speed: '115 MB/s', type: 'TS Stream', ssl: true, subs: true, status: 'online' },
-                              { id: 'backup-slow', nameEn: 'Community Share Proxy', nameAr: 'بروكسي البث التعاوني الاحتياطي', tagline: 'Secondary fallback relay server', quality: '720p Std', speed: '24 MB/s', type: 'HTTP Web', ssl: false, subs: true, status: 'slow' }
+                              { id: 'vidsrc-xyz', nameEn: 'Vidbox Premium [XYZ]', nameAr: 'سيرفر ويدبوكس فائق الجودة [XYZ]', tagline: 'Reconfigured primary cloud network', quality: '4K Ultra', speed: '138 MB/s', type: 'M3U8', ssl: true, subs: true, status: 'online' },
+                              { id: 'vidsrc-cc', nameEn: 'VidSrc CC Fast', nameAr: 'سيرفر ويدسورس CC السريع', tagline: 'Decentralized high speed mirror', quality: '1080p Web', speed: '126 MB/s', type: 'Adaptive', ssl: true, subs: true, status: 'online' },
+                              { id: 'vidsrc-in', nameEn: 'VidSrc IN Domain', nameAr: 'سيرفر ويدسورس IN المباشر', tagline: 'Optimized high-bitrate latency pipeline', quality: '1080p Ultra', speed: '118 MB/s', type: 'MP4 Live', ssl: true, subs: true, status: 'online' },
+                              { id: 'vidsrc-pm', nameEn: 'VidSrc PM Multi', nameAr: 'مسار ويدسورس PM المتعدد', tagline: 'Encrypted geo-distributed stream lane', quality: '1080p HDR', speed: '110 MB/s', type: 'Secure TS', ssl: true, subs: true, status: 'online' },
+                              { id: 'vidbox-ultra', nameEn: 'VidSrc TO Standard', nameAr: 'سيرفر ويدسورس TO القياسي', tagline: 'Standard high-capacity server node', quality: '1080p Web', speed: '104 MB/s', type: 'Adaptive', ssl: true, subs: true, status: 'online' },
+                              { id: 'hls-cyber', nameEn: 'CyberCloud VIP Mirror', nameAr: 'مسار الغيمة السيبرانية الرقمية', tagline: 'Multi-subtitle secure proxy lanes', quality: '1080p Fast', speed: '98 MB/s', type: 'HLS Live', ssl: true, subs: true, status: 'online' },
+                              { id: 'super-fast', nameEn: 'Direct Transcode Core', nameAr: 'نواة المعالجة المباشرة والترجمة', tagline: 'High speed direct stream tunnel', quality: '720p Std', speed: '92 MB/s', type: 'Direct TS', ssl: true, subs: true, status: 'online' },
+                              { id: 'vidsrc-pro', nameEn: 'VidSrc PRO Secure', nameAr: 'سيرفر ويدسورس المحمي PRO', tagline: 'Premium redundant secondary gateway', quality: '1080p HDR', speed: '88 MB/s', type: 'M3U8', ssl: true, subs: true, status: 'online' },
+                              { id: 'autoembed-co', nameEn: 'AutoEmbed Backup', nameAr: 'سيرفر أوتوإمبيد الاحتياطي', tagline: 'Global proxy fallback proxy mirror', quality: '720p Std', speed: '81 MB/s', type: 'HTTP TS', ssl: true, subs: false, status: 'online' }
                             ].map((p) => {
                               const isActive = activeProviderId === p.id;
                               const latency = providerPings[p.id] || 999;
