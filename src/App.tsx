@@ -4565,7 +4565,7 @@ export default function App() {
 
                               {/* Interactive Player Controls overlay hud */}
                               {!currentEpisode?.videoUrl?.includes("embed") && (
-                                <div className="absolute bottom-4 left-4 right-4 bg-black/60 backdrop-blur-xl border border-white/10 p-4 rounded-3xl flex flex-col gap-3 opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-40 hover:opacity-100">
+                                <div className="absolute bottom-4 left-4 right-4 bg-black/60 backdrop-blur-xl border border-white/10 p-4 rounded-3xl flex flex-col gap-3 opacity-0 translate-y-4 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto transition-all duration-300 ease-out shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-40 hover:opacity-100 hover:translate-y-0 hover:pointer-events-auto">
                                   {/* Seek bar */}
                                   <div
                                     className="w-full h-1.5 bg-white/20 rounded-full cursor-pointer relative"
