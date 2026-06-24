@@ -15,7 +15,11 @@ const PORT = 3000;
 app.use(express.json());
 
 // Path to persist mock DB
-const DB_FILE = path.join(process.cwd(), "db_kids_platform.json");
+const IS_VERCEL = !!process.env.VERCEL;
+const BUNDLED_DB_FILE = path.join(process.cwd(), "db_kids_platform.json");
+const DB_FILE = IS_VERCEL 
+  ? path.join("/tmp", "db_kids_platform.json") 
+  : path.join(process.cwd(), "db_kids_platform.json");
 
 // Default initial datasets
 const DEFAULT_VIDEOS: VideoContent[] = [];
@@ -84,6 +88,16 @@ const DEFAULT_LOGS: SystemLog[] = [
 
 // Load Database or initialize
 function getDb() {
+  if (IS_VERCEL && !fs.existsSync(DB_FILE)) {
+    try {
+      if (fs.existsSync(BUNDLED_DB_FILE)) {
+        fs.copyFileSync(BUNDLED_DB_FILE, DB_FILE);
+      }
+    } catch (e) {
+      console.error("Failed to copy bundled DB to /tmp", e);
+    }
+  }
+
   if (fs.existsSync(DB_FILE)) {
     try {
       const dbData = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
@@ -102,7 +116,11 @@ function getDb() {
         });
       }
       if (updated) {
-        fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2), "utf-8");
+        try {
+          fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2), "utf-8");
+        } catch (writeErr) {
+          console.error("Failed to write updated db in getDb", writeErr);
+        }
       }
       return dbData;
     } catch (e) {
@@ -124,12 +142,20 @@ function getDb() {
       activeAdBanners: ["banner", "sidebar"]
     }
   };
-  fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), "utf-8");
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), "utf-8");
+  } catch (writeErr) {
+    console.error("Failed to write initialDb in getDb", writeErr);
+  }
   return initialDb;
 }
 
 function saveDb(data: any) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Failed to save DB in saveDb", e);
+  }
 }
 
 // REST Api endpoints
@@ -1583,4 +1609,8 @@ async function autoExpandArchive() {
   }
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
