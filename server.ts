@@ -18,313 +18,11 @@ app.use(express.json());
 const DB_FILE = path.join(process.cwd(), "db_kids_platform.json");
 
 // Default initial datasets
-const DEFAULT_VIDEOS: VideoContent[] = [
-  {
-    id: "v1",
-    title: {
-      ar: "مغامرات أرنب الفضاء الصغير",
-      en: "Adventures of Little Space Bunny",
-      fr: "Aventures du Petit Lapin de l'Espace",
-      de: "Abenteuer des Kleinen Weltraum-Hasen",
-      es: "Aventuras del Pequeño Conejo Espacial",
-      it: "Avventure del Piccolo Coniglio Spaziale"
-    },
-    description: {
-      ar: "تابع الأرنب الذكي بوبو وهو يستكشف الكواكب الملونة ويصنع صداقات مع الكائنات اللطيفة لحل المشاكل الفضائية.",
-      en: "Follow Bobo, the clever bunny, as he explores colorful planets, makes friendly alien friends, and solves cosmic puzzles.",
-      fr: "Suivez Bobo, le lapin astucieux, explorant des planètes colorées, se faisant des amis extraterrestres amicaux et résolvant des énigmes cosmiques.",
-      de: "Begleite Bobo, das schlaue Kaninchen, auf seiner Entdeckungsreise durch farbenfrohe Planeten, schließe Freundschaften mit Aliens und löse kosmische Rätsel.",
-      es: "Sigue a Bobo, el conejo astuto, mientras explora planetas coloridos, hace amigos extraterrestres amigables y resuelve acertijos cósmicos.",
-      it: "Segui Bobo, l'astuto coniglietto, mentre esplora pianeti colorati, fa amicizia con simpatici alieni e risolve enigmi cosmici."
-    },
-    poster: "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=600&auto=format&fit=crop",
-    banner: "https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=1200&auto=format&fit=crop",
-    type: "anime",
-    ageCategory: "3-5",
-    seasonsCount: 2,
-    rating: 4.8,
-    releaseYear: 2025,
-    views: 421000,
-    genres: ["adventure", "comedy", "fantasy"],
-    languageOptions: {
-      dubbed: ["ar", "en", "fr", "es"],
-      subtitled: ["ar", "en", "fr", "de", "es", "it"]
-    },
-    tags: ["bunny", "space", "funny", "cute", "planets"]
-  },
-  {
-    id: "v2",
-    title: {
-      ar: "البومة المعلمة في الغابة العجيبة",
-      en: "The Wise Owl Teacher of Wonderwood",
-      fr: "Le Sage Hibou Professeur de Wonderwood",
-      de: "Der Weise Eulenlehrer von Wonderwood",
-      es: "El Sabio Búho Maestro de Wonderwood",
-      it: "Il Saggio Gufo Maestro di Wonderwood"
-    },
-    description: {
-      ar: "محتوى تعليمي ترفيهي مميز يعلم الأطفال الرياضيات البسيطة، الحروف، وأهمية الحفاظ على الطبيعة بطرق تفاعلية.",
-      en: "A wonderful educational cartoon teaching kids basic math, alphabet, and the value of forest conservation through interactive play.",
-      fr: "Un magnifique dessin animé éducatif qui enseigne aux enfants les mathématiques de base, l'alphabet et la protection des forêts.",
-      de: "Ein wundervoller Lerncartoon, der Kindern spielerisch einfaches Rechnen, das Alphabet und den Naturschutz näherbringt.",
-      es: "Un maravilloso dibujo animado educativo que enseña a los niños matemáticas básicas, el abecedario y la conservación forestal.",
-      it: "Un meraviglioso cartone animato educativo che insegna ai bambini la matematica di base, l'alfabeto e la cura della foresta."
-    },
-    poster: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=600&auto=format&fit=crop",
-    banner: "https://images.unsplash.com/photo-1448375240586-882707db888b?q=80&w=1200&auto=format&fit=crop",
-    type: "educational",
-    ageCategory: "6-8",
-    duration: "24 min",
-    rating: 4.9,
-    releaseYear: 2024,
-    views: 934000,
-    genres: ["learning", "science", "nature"],
-    languageOptions: {
-      dubbed: ["ar", "en", "fr", "de", "es", "it"],
-      subtitled: ["ar", "en", "fr", "de", "es", "it"]
-    },
-    tags: ["owl", "education", "forest", "math", "nature"]
-  },
-  {
-    id: "v3",
-    title: {
-      ar: "ديناصورات المرح والرياضة",
-      en: "Super Dinosaurs Athletics Club",
-      fr: "Le Club d'Athlétisme des Super Dinos",
-      de: "Der Super-Saurier-Sportclub",
-      es: "El Club de Atletismo de Súper Dinosaurios",
-      it: "Il Club di Atletica dei Super Dinosauri"
-    },
-    description: {
-      ar: "ديناصورات صغيرة نشيطة تتعلم العمل الجماعي، اللياقة البدنية، والغذاء الصحي من أجل الفوز بكأس الغابة السنوي.",
-      en: "Active, energetic little dinosaurs learning teamwork, exercise, and healthy eating to compete in the Annual Forest Olympics.",
-      fr: "De petits dinosaures énergiques apprenant le travail d'équipe, l'exercice et la nutrition pour remporter les Olympiades de la Forêt.",
-      de: "Aktive kleine Dinosaurier lernen Teamwork, gesunde Ernährung und Fitness auf ihrem Weg zur jährlichen Wald-Olympiade.",
-      es: "Pequeños dinosaurios activos que aprenden trabajo en equipo, ejercicio y nutrición saludable para las Olimpiadas Anuales del Bosque.",
-      it: "Piccoli dinosauri dinamici che scoprono il lavoro di squadra, lo sport e la sana alimentazione per vincere le Olimpiadi della Foresta."
-    },
-    poster: "https://images.unsplash.com/photo-1532012197267-da84d127e765?q=80&w=600&auto=format&fit=crop",
-    banner: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=1200&auto=format&fit=crop",
-    type: "movie",
-    ageCategory: "6-8",
-    duration: "78 min",
-    rating: 4.7,
-    releaseYear: 2026,
-    views: 1250000,
-    genres: ["adventure", "sports", "comedy"],
-    languageOptions: {
-      dubbed: ["ar", "en", "fr", "es"],
-      subtitled: ["ar", "en", "fr", "de", "es", "it"]
-    },
-    tags: ["dinosaurs", "sports", "teamwork", "health"]
-  },
-  {
-    id: "v4",
-    title: {
-      ar: "جزيرة الألوان السحرية",
-      en: "The Secret Island of Magic Paints",
-      fr: "L'Île Secrète de la Peinture Magique",
-      de: "Die Geheimnisvolle Malinsel",
-      es: "La Isla Secreta de Pinturas Mágicas",
-      it: "L'Isola Segreta dei Colori Magici"
-    },
-    description: {
-      ar: "برنامج تعليمي وإبداعي مبهر يطلق خيال الطفل عبر واجهة مبهجة لتعليم خلط الألوان ومبادئ الرسم البسيط والأشكال الهندسية.",
-      en: "An artistic, imaginative show introducing kids to coloring, geometric shapes, and basic drawings alongside magical paint monsters.",
-      fr: "Une émission créative pour initier les petits aux couleurs, formes géométriques et dessins simples avec de gentils monstres de peinture.",
-      de: "Eine kreative Sendung, die Kindern spielerisch Farben, geometrische Formen und einfaches Zeichnen mit freundlichen Farbmonstern zeigt.",
-      es: "Un programa creativo para introducir a los niños al color, figuras geométricas y dibujo básico con amigables monstruos de pintura.",
-      it: "Uno show artistico e divertente che svela ai bambini i segreti della pittura, delle forme geometriche e dei pastelli colorati."
-    },
-    poster: "https://images.unsplash.com/photo-1513364776144-60967b0f800f?q=80&w=600&auto=format&fit=crop",
-    banner: "https://images.unsplash.com/photo-1525909015042-d8717955c441?q=80&w=1200&auto=format&fit=crop",
-    type: "educational",
-    ageCategory: "3-5",
-    duration: "18 min",
-    rating: 4.6,
-    releaseYear: 2025,
-    views: 310000,
-    genres: ["art", "learning", "creativity"],
-    languageOptions: {
-      dubbed: ["ar", "en", "de", "it"],
-      subtitled: ["ar", "en", "fr", "de", "es", "it"]
-    },
-    tags: ["colors", "drawing", "creativity", "shapes"]
-  },
-  {
-    id: "v5",
-    title: {
-      ar: "مدرسة النينجا الصغار",
-      en: "Chibi Ninja Academy",
-      fr: "L'Académie des Chibis Ninjas",
-      de: "Chibi Ninja Akademie",
-      es: "Academia de Chibi Ninjas",
-      it: "L'Accademia dei Piccoli Ninja"
-    },
-    description: {
-      ar: "مسلسل أنمي مليء بالحركة والكوميديا، حيث يتدرب أربعة من حيوانات الباندا والقطط الودودة ليصبحوا مدافعين عن السلام في قريتهم الخيالية الكبرى.",
-      en: "An action-filled anime series of five friendly panda and kitty apprentices training to become defenders of peace in their mystical village.",
-      fr: "Une série animée rythmée par cinq pandas et chatons apprenant à devenir des gardiens de la paix dans leur royaume mystique.",
-      de: "Eine actiongeladene Anime-Serie über Pandas und Katzen, die eine Ausbildung zu legendären Dorfschützern absolvieren.",
-      es: "Una serie de anime activa sobre pandas y felinos que entrenan de forma divertida para ser pacificadores de su aldea mágica.",
-      it: "Una serie anime fantastica con simpatici panda e gattini che si allenano per proteggere il loro magico villaggio."
-    },
-    poster: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?q=80&w=600&auto=format&fit=crop",
-    banner: "https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=1200&auto=format&fit=crop",
-    type: "anime",
-    ageCategory: "9-12",
-    seasonsCount: 1,
-    rating: 4.9,
-    releaseYear: 2025,
-    views: 1850000,
-    genres: ["anime", "action", "comedy"],
-    languageOptions: {
-      dubbed: ["ar", "en", "ja"],
-      subtitled: ["ar", "en", "fr", "de", "es", "it"]
-    },
-    tags: ["anime", "ninja", "panda", "action", "martial arts"]
-  },
-  {
-    id: "v6",
-    title: {
-      ar: "رحلة عبقور الاستكشافية الكبرى",
-      en: "Doraemon: The Grand Forest Mystery",
-      fr: "Doraemon : Le Grand Mystère de la Forêt",
-      de: "Doraemon: Das Geheimnis des Urwalds",
-      es: "Doraemon: El Gran Misterio del Bosque",
-      it: "Doraemon: Il Grande Mistero della Foresta"
-    },
-    description: {
-      ar: "الأنمي المفضل لدى الأجيال يعود بمغامرة شيقة؛ يستعمل عبقور أدواته العجيبة من الجيب الرابع لمساعدة أصدقائه في العثور على مدينة الذهب المفقودة في أعماق الغابة.",
-      en: "The world-famous anime friend Doraemon uses wonderful 22nd-century gadgets to help Nobita and friends find a hidden golden temple in Africa.",
-      fr: "Le célèbre Doraemon utilise ses gadgets magiques du 22ème siècle pour aider Nobiti et ses amis à percer le secret d'une cité dorée légendaire.",
-      de: "Doraemon nutzt seine genialen Gadgets aus der Zukunft, um Nobita und seinen Freunden zu helfen, die verlorene goldene Stadt zu retten.",
-      es: "El famoso robot azul utiliza sus fabulosos inventos del siglo XXII para ayudar a Nobita y amigos a descubrir un templo oculto.",
-      it: "Il gatto robot blu Doraemon usa i suoi incredibili gadget del futuro per aiutare Nobita e compagni ad affrontare mille peripezie."
-    },
-    poster: "https://images.unsplash.com/photo-1560942485-b2a11cc13456?q=80&w=600&auto=format&fit=crop",
-    banner: "https://images.unsplash.com/photo-1501854140801-50d01698950b?q=80&w=1200&auto=format&fit=crop",
-    type: "anime",
-    ageCategory: "6-8",
-    seasonsCount: 1,
-    rating: 4.9,
-    releaseYear: 2026,
-    views: 2310000,
-    genres: ["anime", "fantasy", "comedy"],
-    languageOptions: {
-      dubbed: ["ar", "en", "ja", "fr", "es"],
-      subtitled: ["ar", "en", "fr", "de", "es", "it"]
-    },
-    tags: ["doraemon", "gadgets", "adventure", "classic"]
-  }
-];
+const DEFAULT_VIDEOS: VideoContent[] = [];
 
-const DEFAULT_EPISODES: Episode[] = [
-  // Bobo space bunny
-  {
-    id: "ep1",
-    seriesId: "v1",
-    seasonId: "s1",
-    episodeNumber: 1,
-    title: {
-      ar: "مرحباً بكم في كوكب السكاكر اللذيذة",
-      en: "Welcome to Planet Candy Crunch",
-      fr: "Bienvenue sur la Planète Bonbons",
-      de: "Willkommen auf dem Planeten Kaugummi",
-      es: "Bienvenido al Planeta Piruleta",
-      it: "Benvenuti sul Pianeta Caramella"
-    },
-    description: {
-      ar: "يهبط بوبو على كوكب من الحلوى ويكشف سراً رائعاً عن الأنهار الوردية هناك.",
-      en: "Bobo lands on a sweet candy world and solves the sugary river mystery.",
-      fr: "Bobo atterrit sur un royaume sucré et résout le mystère de la rivière rose.",
-      de: "Bobo landet auf einer süßen Welt und rettet den zuckrigen Limonadenfluss.",
-      es: "Bobo aterriza en un planeta dulce y ayuda a salvar el río de mermelada.",
-      it: "Bobo atterra su un dolcissimo pianeta e ripulisce il fiume di cioccolata."
-    },
-    thumbnail: "https://images.unsplash.com/photo-1581795669633-91b7d4020a83?q=80&w=300&auto=format&fit=crop",
-    duration: "12 min",
-    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-  },
-  {
-    id: "ep2",
-    seriesId: "v1",
-    seasonId: "s1",
-    episodeNumber: 2,
-    title: {
-      ar: "العاصفة الملونة المنقذة",
-      en: "The Magic Color Nebula Rescue",
-      fr: "Sauvetage de la Nébuleuse Lumineuse",
-      de: "Rettung aus dem Bunten Nebel",
-      es: "Rescate en la Nebulosa de Colores",
-      it: "Salvataggio nella Nebulosa Brillante"
-    },
-    description: {
-      ar: "يساعد بوبو مركبة فضائية صغيرة تائهة في المنتصف بمساعدة مصابيح سحرية.",
-      en: "Bobo uses stellar light beacons to guide a lost little spacecraft back home.",
-      fr: "Bobo utilise des balises de lumière pour guider un vaisseau perdu.",
-      de: "Bobo nutzt Sternenlichter, um einem kleinen verirrten Raumschiff zu helfen.",
-      es: "Bobo utiliza pequeños faros galácticos para rescatar un cohete amigo.",
-      it: "Bobo illumina con lampadine magiche la rotta di un astronave amica."
-    },
-    thumbnail: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=300&auto=format&fit=crop",
-    duration: "13 min",
-    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
-  },
-  // Chibi ninja
-  {
-    id: "ep3",
-    seriesId: "v5",
-    seasonId: "s3_1",
-    episodeNumber: 1,
-    title: {
-      ar: "البداية: العثور على سيف الخشب السحري",
-      en: "The Quest for the Magic Training Sword",
-      fr: "À la recherche de l'Épée en Bois Secrète",
-      de: "Die Suche nach dem Holzschwert",
-      es: "El Misterio de la Espada de Madera",
-      it: "La Ricerca della Spada di Legno Leggendaria"
-    },
-    description: {
-      ar: "يبدأ صغار النينجا الحكماء أول تمرين لهم ويتعلمون كيف يكون الانضباط قوة.",
-      en: "The apprentice animal ninjas face their first challenge of patience.",
-      fr: "Les apprentis ninjas font face à leur premier défi de patience.",
-      de: "Die kleinen Ninja-Schüler stellen sich ihrer ersten großen Geduldsprobe.",
-      es: "Los pequeños ninjas aprenden que la verdadera fuerza está en la paciencia.",
-      it: "I piccoli ninja imparano che la bontà e la disciplina vincono ogni sfida."
-    },
-    thumbnail: "https://images.unsplash.com/photo-1552820728-8b83bb6b773f?q=80&w=300&auto=format&fit=crop",
-    duration: "20 min",
-    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
-  }
-];
+const DEFAULT_EPISODES: Episode[] = [];
 
-const DEFAULT_COMMENTS: Comment[] = [
-  {
-    id: "c1",
-    contentId: "v1",
-    userName: "Youssef (Age 9)",
-    userAvatar: "🐱",
-    text: "هذا الكارتون أروع كرتون فضاء شاهدته بحياتي! بوبو دكي جداً ولطيف ونحب لونه الوردي.",
-    timestamp: "2026-06-15T10:00:00Z"
-  },
-  {
-    id: "c2",
-    contentId: "v1",
-    userName: "Alice & Leo",
-    userAvatar: "🐼",
-    text: "We watch this every Saturday! The background music makes us dance along.",
-    timestamp: "2026-06-16T15:24:00Z"
-  },
-  {
-    id: "c3",
-    contentId: "v2",
-    userName: "Fatimah (Mother of 2)",
-    userAvatar: "🦉",
-    text: "برنامج ممتاز لتعليم الأطفال الأرقام، ابني البالغ من العمر 4 سنوات أصبح يعد للعشرة بسهولة.",
-    timestamp: "2026-06-14T08:12:00Z"
-  }
-];
+const DEFAULT_COMMENTS: Comment[] = [];
 
 const DEFAULT_ADS: Advertisement[] = [
   {
@@ -353,18 +51,8 @@ const DEFAULT_PROFILES: UserProfile[] = [
     age: 5, 
     isKidsMode: true, 
     color: "from-orange-400 to-red-500", 
-    watchHistory: ["v1", "v4"],
-    downloads: [
-      {
-        id: "dl_bobo",
-        videoId: "v1",
-        title: "Adventures of Little Space Bunny",
-        poster: "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=600&auto=format&fit=crop",
-        type: "anime",
-        sizeMb: 120,
-        downloadedAt: "2026-06-16T15:30:00Z"
-      }
-    ]
+    watchHistory: [],
+    downloads: []
   },
   { 
     id: "p2", 
@@ -373,18 +61,8 @@ const DEFAULT_PROFILES: UserProfile[] = [
     age: 10, 
     isKidsMode: true, 
     color: "from-pink-400 to-purple-500", 
-    watchHistory: ["v5", "v6"],
-    downloads: [
-      {
-        id: "dl_owl",
-        videoId: "v2",
-        title: "The Wise Owl Teacher of Wonderwood",
-        poster: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=600&auto=format&fit=crop",
-        type: "educational",
-        sizeMb: 85,
-        downloadedAt: "2026-06-16T18:22:00Z"
-      }
-    ]
+    watchHistory: [],
+    downloads: []
   },
   { 
     id: "p3", 
@@ -393,7 +71,7 @@ const DEFAULT_PROFILES: UserProfile[] = [
     age: 7, 
     isKidsMode: true, 
     color: "from-green-400 to-emerald-600", 
-    watchHistory: ["v2", "v3"],
+    watchHistory: [],
     downloads: []
   }
 ];
@@ -414,51 +92,12 @@ function getDb() {
       if (dbData.profiles && Array.isArray(dbData.profiles)) {
         dbData.profiles.forEach((p: any) => {
           if (!p.watchHistory) {
-            if (p.id === "p1") {
-              p.watchHistory = ["v1", "v4"];
-              updated = true;
-            } else if (p.id === "p2") {
-              p.watchHistory = ["v5", "v6"];
-              updated = true;
-            } else if (p.id === "p3") {
-              p.watchHistory = ["v2", "v3"];
-              updated = true;
-            } else {
-              p.watchHistory = [];
-              updated = true;
-            }
+            p.watchHistory = [];
+            updated = true;
           }
           if (!p.downloads) {
-            if (p.id === "p1") {
-              p.downloads = [
-                {
-                  id: "dl_bobo",
-                  videoId: "v1",
-                  title: "Adventures of Little Space Bunny",
-                  poster: "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=600&auto=format&fit=crop",
-                  type: "anime",
-                  sizeMb: 120,
-                  downloadedAt: new Date().toISOString()
-                }
-              ];
-              updated = true;
-            } else if (p.id === "p2") {
-              p.downloads = [
-                {
-                  id: "dl_owl",
-                  videoId: "v2",
-                  title: "The Wise Owl Teacher of Wonderwood",
-                  poster: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=600&auto=format&fit=crop",
-                  type: "educational",
-                  sizeMb: 85,
-                  downloadedAt: new Date().toISOString()
-                }
-              ];
-              updated = true;
-            } else {
-              p.downloads = [];
-              updated = true;
-            }
+            p.downloads = [];
+            updated = true;
           }
         });
       }
@@ -1424,6 +1063,150 @@ No extra markdown code blocks outside JSON. Keep it concise, friendly, and magic
       explanation: language === "ar"
         ? "تألق يا بطل! إليك هذه الأفلام المناسبة جداً لمشاهدتها الآن!"
         : "Here's some cool content lined up for your adventurous day!",
+      mode: "api_fallback"
+    });
+  }
+});
+
+// AI-powered video detail related recommendation helper
+app.post("/api/videos/recommend-more", async (req, res) => {
+  const db = getDb();
+  const { videoId, excludeIds = [], language = "en" } = req.body;
+
+  if (!videoId) {
+    return res.status(400).json({ success: false, error: "videoId is required" });
+  }
+
+  const activeVideo = db.videos.find((v: any) => v.id === videoId);
+  if (!activeVideo) {
+    return res.status(404).json({ success: false, error: "Video not found" });
+  }
+
+  const hasApiKey = !!process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY" && process.env.GEMINI_API_KEY.trim().length > 0;
+
+  // Compile candidates that are not the current active video
+  const candidates = db.videos.filter((v: any) => v.id !== videoId);
+
+  if (!hasApiKey) {
+    console.log("No Gemini API key for recommend-more. Running stateful local fuzzy recommendation algorithm...");
+    // Local fallback: prioritize videos with matching genres/tags/category, but filter out excludeIds where possible
+    const scored = candidates.map((v: any) => {
+      let score = 0;
+      // Share genre
+      const sharedGenres = (v.genres || []).filter((g: string) => (activeVideo.genres || []).includes(g));
+      score += sharedGenres.length * 3;
+
+      // Share tags
+      const sharedTags = (v.tags || []).filter((t: string) => (activeVideo.tags || []).includes(t));
+      score += sharedTags.length * 1.5;
+
+      // Same category
+      if (v.category === activeVideo.category) {
+        score += 2;
+      }
+      
+      // If listed in excludeIds, penalize heavily so we get fresh results
+      if (excludeIds.includes(v.id)) {
+        score -= 20;
+      }
+
+      // Add a tiny random factor so multiple refreshes return slightly different mixes
+      score += Math.random() * 2;
+
+      return { video: v, score };
+    }).sort((a: any, b: any) => b.score - a.score);
+
+    const recommended = scored.slice(0, 4).map((item: any) => item.video);
+
+    return res.json({
+      success: true,
+      recommendations: recommended,
+      mode: "local_intelligent"
+    });
+  }
+
+  try {
+    const ai = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build'
+        }
+      }
+    });
+
+    // Provide catalog and active video metadata
+    const serializedVideoMeta = candidates.map((v: any) => ({
+      id: v.id,
+      type: v.type,
+      ageCategory: v.ageCategory,
+      genres: v.genres,
+      tags: v.tags,
+      titleEn: v.title.en,
+      titleAr: v.title.ar,
+      descriptionEn: v.description.en,
+      descriptionAr: v.description.ar
+    }));
+
+    const aiPrompt = `You are a kids-streaming platform recommendation engine.
+We want to generate 4 customized "More Like This" recommendations for a child who is currently watching:
+Title: "${activeVideo.title.en}" (Arabic: "${activeVideo.title.ar}")
+Description: "${activeVideo.description.en}"
+Genres: ${JSON.stringify(activeVideo.genres)}
+Tags: ${JSON.stringify(activeVideo.tags)}
+
+Available Candidates catalog: ${JSON.stringify(serializedVideoMeta)}
+
+The user has explicitly asked to refresh or avoid these specific video IDs because they are NOT interested in them: ${JSON.stringify(excludeIds)}. Avoid recommending these IDs if possible.
+
+Select exactly 4 unique content IDs from the candidates catalog that would be highly appealing, fun, safe, and closely related or a creative next step.
+Return a valid JSON object ONLY, adhering to this format:
+{
+  "recommendedIds": ["v1", "v2", "v3", "v4"]
+}
+No extra markdown code blocks outside JSON.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: aiPrompt,
+      config: {
+        responseMimeType: "application/json"
+      }
+    });
+
+    const text = response.text || "{}";
+    const parsed = JSON.parse(text.trim());
+    const recommendedIds = parsed.recommendedIds || [];
+
+    // Map back to video objects
+    let recommendations = recommendedIds
+      .map((id: string) => db.videos.find((v: any) => v.id === id))
+      .filter(Boolean);
+
+    // If less than 4, fill with best local fallbacks
+    if (recommendations.length < 4) {
+      const remaining = candidates.filter((c: any) => !recommendations.some((r: any) => r.id === c.id) && !excludeIds.includes(c.id));
+      recommendations = [...recommendations, ...remaining.slice(0, 4 - recommendations.length)];
+    }
+
+    // Keep precisely up to 4
+    recommendations = recommendations.slice(0, 4);
+
+    return res.json({
+      success: true,
+      recommendations,
+      mode: "gemini_ai"
+    });
+
+  } catch (error: any) {
+    console.error("Gemini AI API recommend-more error:", error);
+    // Secure fallback: get 4 candidates from same genres or category
+    const fallback = candidates
+      .filter((v: any) => !excludeIds.includes(v.id))
+      .slice(0, 4);
+    res.json({
+      success: true,
+      recommendations: fallback,
       mode: "api_fallback"
     });
   }

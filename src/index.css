@@ -1,4 +1,10 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Cairo:wght@400;600;700;800&display=swap');
 @import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", "Cairo", system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", "Cairo", system-ui, sans-serif;
+}
 
 @property --gradient-angle {
   syntax: "<angle>";
@@ -57,3 +63,53 @@
 #video-arena.scroll-paused::after {
   animation-play-state: paused !important;
 }
+
+/* Cheerful kids Islamic theme style overrides */
+.islamic-kids-bg {
+  background: radial-gradient(circle at top, #0B533A 0%, #042E20 50%, #01140E 100%) !important;
+}
+
+/* Lantern (fanous) swing animation */
+@keyframes fanous-swing {
+  0% { transform: rotate(-6deg); }
+  50% { transform: rotate(6deg); }
+  100% { transform: rotate(-6deg); }
+}
+
+.animate-fanous-swing {
+  animation: fanous-swing 5s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+/* Floating cloud animation */
+@keyframes cloud-float {
+  0% { transform: translateY(0px) translateX(0px); }
+  50% { transform: translateY(-10px) translateX(4px); }
+  100% { transform: translateY(0px) translateX(0px); }
+}
+
+.animate-cloud-float {
+  animation: cloud-float 7s ease-in-out infinite;
+}
+
+/* Twinkle star animation */
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+.animate-star-twinkle {
+  animation: star-twinkle 3s ease-in-out infinite;
+}
+
+/* Cheerful kid card styles */
+.kids-gold-border {
+  border-color: rgba(251, 191, 36, 0.4) !important;
+}
+.kids-gold-shadow {
+  box-shadow: 0 0 15px rgba(251, 191, 36, 0.15) !important;
+}
+.kids-gold-shadow-hover:hover {
+  box-shadow: 0 0 25px rgba(251, 191, 36, 0.35) !important;
+}
+
