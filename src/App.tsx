@@ -357,6 +357,8 @@ export default function App() {
 
   // Premium Stream Enhancements
   const [showStatsForNerds, setShowStatsForNerds] = useState<boolean>(false);
+  const [selectedBrand, setSelectedBrand] = useState<string>("all");
+  const [featuredIndex, setFeaturedIndex] = useState<number>(0);
   const [isPlayerLocked, setIsPlayerLocked] = useState<boolean>(false);
   const [showHotkeysModal, setShowHotkeysModal] = useState<boolean>(false);
   const [spatialAudioMode, setSpatialAudioMode] = useState<
@@ -1185,8 +1187,14 @@ export default function App() {
     swipeHandledRef.current = false;
   };
 
-  const scrollCarousel = (direction: "left" | "right") => {
-    if (carouselRef.current) {
+  const scrollCarousel = (direction: "left" | "right", rowId?: string) => {
+    if (rowId) {
+      const container = document.getElementById(rowId);
+      if (container) {
+        const scrollAmount = direction === "left" ? -500 : 500;
+        container.scrollBy({ left: scrollAmount, behavior: "smooth" });
+      }
+    } else if (carouselRef.current) {
       const scrollAmount = direction === "left" ? -320 : 320;
       carouselRef.current.scrollBy({ left: scrollAmount, behavior: "smooth" });
     }
@@ -1198,6 +1206,19 @@ export default function App() {
   const t = (key: string): string => {
     return TRANSLATIONS[lang]?.[key] || TRANSLATIONS["en"]?.[key] || key;
   };
+
+  // Automated spotlight rotating slide timer
+  useEffect(() => {
+    if (isPlaying) return;
+    const interval = setInterval(() => {
+      setFeaturedIndex((prev) => {
+        const topRated = videos.slice(0, 5);
+        if (topRated.length === 0) return 0;
+        return (prev + 1) % topRated.length;
+      });
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [videos, isPlaying]);
 
   // Fetch initial data
   useEffect(() => {
@@ -2886,6 +2907,35 @@ export default function App() {
       if (activeTab === "educational" && v.type !== "educational") return false;
       if (activeTab === "favorites" && !favorites.includes(v.id)) return false;
 
+      // Brand Filter (Disney+ Style Brand Selection)
+      if (selectedBrand !== "all") {
+        if (selectedBrand === "noor") {
+          const isNoor = v.source?.toLowerCase().includes("noor") ||
+                         v.creator?.toLowerCase().includes("noor") ||
+                         v.category?.toLowerCase() === "classic" ||
+                         (v.tags || []).some(t => ["classic", "noor", "islamic", "prophets"].includes(t.toLowerCase()));
+          if (!isNoor) return false;
+        } else if (selectedBrand === "pixar") {
+          const isPixar = v.type === "movie" ||
+                          (v.genres || []).some(g => ["animation", "comedy", "adventure"].includes(g.toLowerCase())) ||
+                          (v.tags || []).some(t => ["animation", "classic", "comedy"].includes(t.toLowerCase()));
+          if (!isPixar) return false;
+        } else if (selectedBrand === "quran") {
+          const isQuran = v.category?.toLowerCase() === "educational" || v.type === "educational" ||
+                          (v.genres || []).some(g => ["learning", "science", "quran", "arabic"].includes(g.toLowerCase())) ||
+                          (v.tags || []).some(t => ["education", "learning", "quran", "arabic", "ramadan"].includes(t.toLowerCase()));
+          if (!isQuran) return false;
+        } else if (selectedBrand === "adventure") {
+          const isAdventure = (v.genres || []).some(g => ["adventure", "sports", "comedy"].includes(g.toLowerCase())) ||
+                              (v.tags || []).some(t => ["adventure", "action"].includes(t.toLowerCase()));
+          if (!isAdventure) return false;
+        } else if (selectedBrand === "bedtime") {
+          const isBedtime = v.duration?.includes("min") && parseInt(v.duration) <= 20 ||
+                            (v.tags || []).some(t => ["classic", "calm", "bedtime", "story", "stories", "lullaby"].includes(t.toLowerCase()));
+          if (!isBedtime) return false;
+        }
+      }
+
       // Age Filter
       if (ageFilter !== "all") {
         if (v.ageCategory !== ageFilter) return false;
@@ -2914,7 +2964,7 @@ export default function App() {
 
       return true;
     });
-  }, [videos, dbSettings, lang, activeTab, favorites, ageFilter, selectedGenre, searchQuery]);
+  }, [videos, dbSettings, lang, activeTab, favorites, ageFilter, selectedGenre, searchQuery, selectedBrand]);
 
   // Get recommendations based on the last 5 viewed items (memoized recommendation engine)
   const smartRecommendations = useMemo((): {
@@ -3479,92 +3529,228 @@ export default function App() {
               activeTab !== "downloads" &&
               activeTab !== "open-resources" && (
                 <>
-                  {/* HERO BANNER SLIDER (Sophisticated design background with "Cosmic Buddies" feeling based on user active pick) */}
-                  {activeVideo && (
-                    <div className="relative min-h-[360px] md:h-[400px] rounded-[40px] overflow-hidden border border-white/10 shadow-2xl flex flex-col justify-end p-6 md:p-12">
-                      <div
-                        className="absolute inset-0 bg-cover bg-center transition-all duration-700 opacity-60 bg-blend-multiply"
-                        style={{
-                          backgroundImage: `linear-gradient(90deg, #050508 40%, rgba(5, 5, 8, 0.4) 100%), url(${activeVideo.banner})`,
-                        }}
-                      />
+                  {/* HERO SPOTLIGHT SLIDER CAROUSEL (Auto-rotating, interactive movie slider) */}
+                  {videos.length > 0 && (() => {
+                    const featuredLimit = videos.slice(0, 5);
+                    const slideVideo = featuredLimit[featuredIndex] || activeVideo || videos[0];
+                    return (
+                      <div className="relative min-h-[380px] md:h-[420px] rounded-[40px] overflow-hidden border border-white/10 shadow-2xl flex flex-col justify-end p-6 md:p-12 group/hero select-none">
+                        {/* Immersive backdrop with horizontal vignette */}
+                        <div
+                          className="absolute inset-0 bg-cover bg-center transition-all duration-1000 ease-in-out opacity-65 bg-blend-multiply scale-100 group-hover/hero:scale-102"
+                          style={{
+                            backgroundImage: `linear-gradient(90deg, #050508 45%, rgba(5, 5, 8, 0.3) 100%), url(${slideVideo.banner || slideVideo.poster})`,
+                          }}
+                        />
 
-                      {/* Floating top indicators */}
-                      <div className="absolute top-6 left-6 md:top-8 md:left-12 flex gap-2">
-                        <span className="bg-[#00F2FF]/20 text-[#00F2FF] text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest border border-[#00F2FF]/30">
-                          {activeVideo.type.toUpperCase()}
-                        </span>
-                        <span className="bg-purple-500/20 text-purple-300 text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest border border-purple-500/30">
-                          {t("allAges")} • {activeVideo.ageCategory}
-                        </span>
-                        <span className="bg-amber-400/20 text-amber-300 text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest border border-amber-400/30">
-                          ⭐ {activeVideo.rating}
-                        </span>
-                      </div>
+                        {/* Top glow overlay */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a14] via-transparent to-transparent opacity-90 z-0" />
 
-                      <div className="relative max-w-2xl flex flex-col gap-4">
-                        <h1 className="text-4xl md:text-6xl font-black italic tracking-tighter leading-none uppercase bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-100 to-white">
-                          {activeVideo.title[lang] || activeVideo.title.en}
-                        </h1>
-                        <p className="text-white/70 text-sm leading-relaxed max-w-lg">
-                          {activeVideo.description[lang] ||
-                            activeVideo.description.en}
-                        </p>
+                        {/* Left & Right manual navigation arrow controls (Netflix / Disney+ style) */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFeaturedIndex((prev) => (prev === 0 ? featuredLimit.length - 1 : prev - 1));
+                          }}
+                          className="absolute left-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-black/70 hover:border-white/35 active:scale-90 opacity-0 group-hover/hero:opacity-100 transition-all duration-300 z-20 cursor-pointer"
+                          title="Previous featured"
+                        >
+                          <ChevronLeft className="w-6 h-6" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFeaturedIndex((prev) => (prev === featuredLimit.length - 1 ? 0 : prev + 1));
+                          }}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-black/70 hover:border-white/35 active:scale-90 opacity-0 group-hover/hero:opacity-100 transition-all duration-300 z-20 cursor-pointer"
+                          title="Next featured"
+                        >
+                          <ChevronRight className="w-6 h-6" />
+                        </button>
 
-                        {/* Video Player Action controls inside hero */}
-                        <div className="flex flex-wrap items-center gap-4 mt-2">
-                          <button
-                            onClick={() => {
-                              setIsPlaying(true);
-                              // Scroll to player smooth
-                              document
-                                .getElementById("video-arena")
-                                ?.scrollIntoView({ behavior: "smooth" });
-                            }}
-                            className="bg-white text-black px-8 py-3.5 rounded-2xl font-black flex items-center justify-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-lg shadow-white/10"
-                          >
-                            <Play className="w-4 h-4 fill-current text-black" />
-                            <span>{t("playNow")}</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleToggleFavorite(activeVideo.id)}
-                            className={`px-5 py-3.5 rounded-2xl font-bold border flex items-center gap-2 transition-all ${
-                              favorites.includes(activeVideo.id)
-                                ? "bg-rose-600/20 text-rose-300 border-rose-500/40"
-                                : "bg-white/10 text-white border-white/10 hover:bg-white/20"
-                            }`}
-                          >
-                            <Heart
-                              className={`w-4 h-4 ${favorites.includes(activeVideo.id) ? "fill-current text-rose-400" : ""}`}
-                            />
-                            <span>
-                              {favorites.includes(activeVideo.id)
-                                ? t("favourite")
-                                : "+ My List"}
-                            </span>
-                          </button>
-
-                          <span className="text-xs text-white/40">
-                            {activeVideo.views.toLocaleString()}{" "}
-                            {t("viewsCount")} • {activeVideo.releaseYear}
+                        {/* Floating top indicators */}
+                        <div className="absolute top-6 left-6 md:top-8 md:left-12 flex gap-2 z-10">
+                          <span className="bg-[#00F2FF]/20 text-[#00F2FF] text-[10px] px-3.5 py-1 rounded-full font-black uppercase tracking-wider border border-[#00F2FF]/30 backdrop-blur-md">
+                            {slideVideo.type.toUpperCase()}
+                          </span>
+                          <span className="bg-purple-500/20 text-purple-300 text-[10px] px-3.5 py-1 rounded-full font-black uppercase tracking-wider border border-purple-500/30 backdrop-blur-md">
+                            {t("allAges")} • {slideVideo.ageCategory}
+                          </span>
+                          <span className="bg-amber-400/20 text-amber-300 text-[10px] px-3.5 py-1 rounded-full font-black uppercase tracking-wider border border-amber-400/30 backdrop-blur-md">
+                            ⭐ {slideVideo.rating}
                           </span>
                         </div>
-                      </div>
 
-                      {/* Banner slider indicators */}
-                      <div className="absolute bottom-6 right-6 md:right-12 flex gap-2">
-                        {videos.slice(0, 4).map((v, i) => (
-                          <button
-                            key={v.id}
-                            onClick={() => setActiveVideo(v)}
-                            className={`h-1.5 transition-all rounded-full ${activeVideo.id === v.id ? "w-8 bg-[#00F2FF]" : "w-2 bg-white/20"}`}
-                            title={v.title.en}
-                          />
-                        ))}
+                        {/* Info details panel */}
+                        <div className="relative max-w-2xl flex flex-col gap-4 z-10">
+                          <h1 className="text-4xl md:text-6xl font-black italic tracking-tighter leading-none uppercase bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-100 to-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
+                            {slideVideo.title[lang] || slideVideo.title.en}
+                          </h1>
+                          <p className="text-white/80 text-xs md:text-sm leading-relaxed max-w-lg drop-shadow-md">
+                            {slideVideo.description[lang] || slideVideo.description.en}
+                          </p>
+
+                          {/* Video Player Action controls inside hero */}
+                          <div className="flex flex-wrap items-center gap-4 mt-2">
+                            <button
+                              onClick={() => {
+                                setActiveVideo(slideVideo);
+                                setIsPlaying(true);
+                                setTimeout(() => {
+                                  document
+                                    .getElementById("video-arena")
+                                    ?.scrollIntoView({ behavior: "smooth" });
+                                }, 100);
+                              }}
+                              className="bg-white text-black px-8 py-3.5 rounded-2xl font-black flex items-center justify-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10 cursor-pointer"
+                            >
+                              <Play className="w-4 h-4 fill-current text-black" />
+                              <span>{t("playNow")}</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleToggleFavorite(slideVideo.id)}
+                              className={`px-5 py-3.5 rounded-2xl font-bold border flex items-center gap-2 transition-all cursor-pointer ${
+                                favorites.includes(slideVideo.id)
+                                  ? "bg-rose-600/20 text-rose-300 border-rose-500/40"
+                                  : "bg-white/10 text-white border-white/10 hover:bg-white/20"
+                              }`}
+                            >
+                              <Heart
+                                className={`w-4 h-4 ${favorites.includes(slideVideo.id) ? "fill-current text-rose-400" : ""}`}
+                              />
+                              <span>
+                                {favorites.includes(slideVideo.id)
+                                  ? t("favourite")
+                                  : "+ My List"}
+                              </span>
+                            </button>
+
+                            <span className="text-xs text-white/50 drop-shadow font-semibold">
+                              {slideVideo.views.toLocaleString()} {t("viewsCount")} • {slideVideo.releaseYear}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Banner slider pagination dots */}
+                        <div className="absolute bottom-6 right-6 md:right-12 flex gap-2.5 z-10">
+                          {featuredLimit.map((v, i) => (
+                            <button
+                              key={v.id}
+                              onClick={() => setFeaturedIndex(i)}
+                              className={`h-2 transition-all rounded-full cursor-pointer ${featuredIndex === i ? "w-8 bg-[#00F2FF]" : "w-2 bg-white/25 hover:bg-white/50"}`}
+                              title={v.title.en}
+                            />
+                          ))}
+                        </div>
                       </div>
+                    );
+                  })()}
+
+                  {/* DISNEY+ / PIXAR STYLE BRAND CHANNELS HUB */}
+                  <div className="flex flex-col gap-3 my-2 select-none">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6">
+                      {[
+                        {
+                          id: "noor",
+                          name: lang === "ar" ? "سينما نور" : "Noor Cinema",
+                          emoji: "🕌✨",
+                          subtitle: lang === "ar" ? "قصص وعبر" : "Moral Stories",
+                          color: "from-amber-650/40 to-amber-950/20 hover:border-amber-400/50 hover:shadow-[0_12px_24px_rgba(245,158,11,0.25)]",
+                          dotColor: "bg-amber-400"
+                        },
+                        {
+                          id: "pixar",
+                          name: lang === "ar" ? "سحر بيكسار" : "Pixar Magic",
+                          emoji: "🎬🌟",
+                          subtitle: lang === "ar" ? "مغامرات شيقة" : "Fun Adventures",
+                          color: "from-cyan-650/40 to-blue-950/20 hover:border-cyan-400/50 hover:shadow-[0_12px_24px_rgba(6,182,212,0.25)]",
+                          dotColor: "bg-cyan-400"
+                        },
+                        {
+                          id: "quran",
+                          name: lang === "ar" ? "القرآن والتعليم" : "Quran & Learn",
+                          emoji: "📖💡",
+                          subtitle: lang === "ar" ? "قرآن وعلوم" : "Quran & Science",
+                          color: "from-emerald-650/40 to-teal-950/20 hover:border-emerald-400/50 hover:shadow-[0_12px_24px_rgba(16,185,129,0.25)]",
+                          dotColor: "bg-emerald-400"
+                        },
+                        {
+                          id: "adventure",
+                          name: lang === "ar" ? "عالم المغامرة" : "Adventure Hub",
+                          emoji: "🚀🔥",
+                          subtitle: lang === "ar" ? "نشاط وتحدي" : "Action & Play",
+                          color: "from-rose-650/40 to-pink-950/20 hover:border-rose-400/50 hover:shadow-[0_12px_24px_rgba(244,63,94,0.25)]",
+                          dotColor: "bg-rose-400"
+                        },
+                        {
+                          id: "bedtime",
+                          name: lang === "ar" ? "حكايات قبل النوم" : "Bedtime Tales",
+                          emoji: "🌙💤",
+                          subtitle: lang === "ar" ? "هدوء واسترخاء" : "Cozy Bedside",
+                          color: "from-violet-650/40 to-purple-950/20 hover:border-violet-400/50 hover:shadow-[0_12px_24px_rgba(139,92,246,0.25)]",
+                          dotColor: "bg-violet-400"
+                        }
+                      ].map((brand) => {
+                        const isActive = selectedBrand === brand.id;
+                        return (
+                          <div
+                            key={brand.id}
+                            id={`brand-tile-${brand.id}`}
+                            onClick={() => setSelectedBrand(isActive ? "all" : brand.id)}
+                            className={`relative group overflow-hidden rounded-3xl border p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-500 bg-gradient-to-b ${brand.color} ${
+                              isActive
+                                ? "border-white scale-[1.03] ring-4 ring-white/10 bg-white/[0.04]"
+                                : "border-white/10 hover:scale-[1.04] hover:-translate-y-1"
+                            }`}
+                          >
+                            {/* Inner glowing particle circles behind text */}
+                            <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none">
+                              <div className={`absolute top-2 left-6 w-3 h-3 rounded-full ${brand.dotColor} opacity-20 blur-sm animate-pulse`} />
+                              <div className={`absolute bottom-4 right-8 w-4 h-4 rounded-full ${brand.dotColor} opacity-30 blur-md animate-ping`} />
+                              <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 rounded-full ${brand.dotColor} opacity-10 blur-xl`} />
+                            </div>
+
+                            <div className="text-3xl md:text-4xl mb-2.5 transform group-hover:scale-115 group-hover:rotate-3 transition-transform duration-500 z-10">
+                              {brand.emoji}
+                            </div>
+                            <span className="font-extrabold text-sm text-white tracking-tight group-hover:text-white transition-colors z-10">
+                              {brand.name}
+                            </span>
+                            <span className="text-[10px] text-white/40 mt-1 uppercase font-black tracking-widest group-hover:text-white/60 transition-colors z-10">
+                              {brand.subtitle}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
-                  )}
+
+                    {/* Active filter clear indicator */}
+                    {selectedBrand !== "all" && (
+                      <div className="flex items-center gap-2 mt-1.5 self-start animate-fade-in">
+                        <span className="text-xs text-white/60">
+                          {lang === "ar" ? "الفلتر النشط:" : "Active Channel:"}
+                        </span>
+                        <button
+                          onClick={() => setSelectedBrand("all")}
+                          className="px-3 py-1 bg-cyan-400 text-black rounded-full text-xs font-bold hover:bg-cyan-300 transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>
+                            {
+                              {
+                                noor: lang === "ar" ? "سينما نور" : "Noor Cinema",
+                                pixar: lang === "ar" ? "سحر بيكسار" : "Pixar Magic",
+                                quran: lang === "ar" ? "القرآن والتعليم" : "Quran & Learn",
+                                adventure: lang === "ar" ? "عالم المغامرة" : "Adventure Hub",
+                                bedtime: lang === "ar" ? "حكايات قبل النوم" : "Bedtime Tales",
+                              }[selectedBrand] || selectedBrand
+                            }
+                          </span>
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
                   {/* AGE & GENRE FILTER RAILS FOR THE LITTLE AUDIENCE */}
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#0F0F15]/60 p-4 rounded-3xl border border-white/5">
