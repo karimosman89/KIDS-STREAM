@@ -85,70 +85,115 @@ const DEFAULT_LOGS: SystemLog[] = [
 ];
 
 // Load Database or initialize
+let cachedDb: any = null;
+
 function getDb() {
-  if (IS_VERCEL && !fs.existsSync(DB_FILE)) {
+  if (cachedDb) {
+    return cachedDb;
+  }
+
+  // Find a bundled database file using fallback paths
+  let foundBundledPath: string | null = null;
+  const pathsToTry = [
+    path.join(process.cwd(), "db_kids_platform.json"),
+    path.join(__dirname, "db_kids_platform.json"),
+    path.join(__dirname, "..", "db_kids_platform.json"),
+    path.join(__dirname, "../..", "db_kids_platform.json"),
+    "./db_kids_platform.json",
+    "../db_kids_platform.json"
+  ];
+  for (const p of pathsToTry) {
     try {
-      if (fs.existsSync(BUNDLED_DB_FILE)) {
-        fs.copyFileSync(BUNDLED_DB_FILE, DB_FILE);
+      if (fs.existsSync(p)) {
+        foundBundledPath = p;
+        break;
+      }
+    } catch (e) {}
+  }
+
+  // 1. Try reading from writable DB_FILE (like /tmp on Vercel)
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const dbData = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
+      cachedDb = dbData;
+    }
+  } catch (e) {
+    console.error("Error reading DB_FILE:", e);
+  }
+
+  // 2. If not found in DB_FILE, try reading from foundBundledPath
+  if (!cachedDb && foundBundledPath) {
+    try {
+      const dbData = JSON.parse(fs.readFileSync(foundBundledPath, "utf-8"));
+      cachedDb = dbData;
+      // Copy to DB_FILE for subsequent writes
+      try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2), "utf-8");
+      } catch (writeErr) {
+        console.error("Failed to write bundled DB to DB_FILE:", writeErr);
       }
     } catch (e) {
-      console.error("Failed to copy bundled DB to /tmp", e);
+      console.error("Error reading bundled DB file:", e);
     }
   }
 
-  if (fs.existsSync(DB_FILE)) {
+  // 3. Fallback to default schema if still not loaded
+  if (!cachedDb) {
+    const initialDb = {
+      videos: DEFAULT_VIDEOS,
+      episodes: DEFAULT_EPISODES,
+      comments: DEFAULT_COMMENTS,
+      ads: DEFAULT_ADS,
+      profiles: DEFAULT_PROFILES,
+      logs: DEFAULT_LOGS,
+      settings: {
+        siteName: "Kids Stream",
+        allowAdSense: true,
+        requireSubscription: false,
+        parentPin: "1234",
+        activeAdBanners: ["banner", "sidebar"]
+      }
+    };
+    cachedDb = initialDb;
     try {
-      const dbData = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
-      // Ensure watchHistory exists for robustness
-      let updated = false;
-      if (dbData.profiles && Array.isArray(dbData.profiles)) {
-        dbData.profiles.forEach((p: any) => {
-          if (!p.watchHistory) {
-            p.watchHistory = [];
-            updated = true;
-          }
-          if (!p.downloads) {
-            p.downloads = [];
-            updated = true;
-          }
-        });
-      }
-      if (updated) {
-        try {
-          fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2), "utf-8");
-        } catch (writeErr) {
-          console.error("Failed to write updated db in getDb", writeErr);
-        }
-      }
-      return dbData;
-    } catch (e) {
-      console.error("Error reading db... recreating default database schema", e);
+      fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), "utf-8");
+    } catch (writeErr) {
+      console.error("Failed to write initialDb:", writeErr);
     }
   }
-  const initialDb = {
-    videos: DEFAULT_VIDEOS,
-    episodes: DEFAULT_EPISODES,
-    comments: DEFAULT_COMMENTS,
-    ads: DEFAULT_ADS,
-    profiles: DEFAULT_PROFILES,
-    logs: DEFAULT_LOGS,
-    settings: {
-      siteName: "Kids Stream",
-      allowAdSense: true,
-      requireSubscription: false,
-      parentPin: "1234",
-      activeAdBanners: ["banner", "sidebar"]
+
+  // Ensure essential properties exist to prevent any undefined crashes
+  if (cachedDb) {
+    if (!cachedDb.videos) cachedDb.videos = [];
+    if (!cachedDb.episodes) cachedDb.episodes = [];
+    if (!cachedDb.comments) cachedDb.comments = [];
+    if (!cachedDb.ads) cachedDb.ads = DEFAULT_ADS;
+    if (!cachedDb.profiles) cachedDb.profiles = DEFAULT_PROFILES;
+    if (!cachedDb.logs) cachedDb.logs = DEFAULT_LOGS;
+    if (!cachedDb.settings) {
+      cachedDb.settings = {
+        siteName: "Kids Stream",
+        allowAdSense: true,
+        requireSubscription: false,
+        parentPin: "1234",
+        activeAdBanners: ["banner", "sidebar"]
+      };
     }
-  };
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), "utf-8");
-  } catch (writeErr) {
-    console.error("Failed to write initialDb in getDb", writeErr);
+    
+    // Ensure watchHistory & downloads exist on profiles
+    if (Array.isArray(cachedDb.profiles)) {
+      cachedDb.profiles.forEach((p: any) => {
+        if (!p.watchHistory) p.watchHistory = [];
+        if (!p.downloads) p.downloads = [];
+      });
+    }
   }
-  return initialDb;
+
+  return cachedDb;
 }
 
 function saveDb(data: any) {
+  cachedDb = data;
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
   } catch (e) {
@@ -157,6 +202,26 @@ function saveDb(data: any) {
 }
 
 // REST Api endpoints
+app.get("/api/debug", (req, res) => {
+  try {
+    const debugInfo = {
+      cwd: process.cwd(),
+      dirname: __dirname,
+      existsCwd: fs.existsSync(path.join(process.cwd(), "db_kids_platform.json")),
+      existsDirname: fs.existsSync(path.join(__dirname, "db_kids_platform.json")),
+      existsDirnameParent: fs.existsSync(path.join(__dirname, "..", "db_kids_platform.json")),
+      filesCwd: fs.readdirSync(process.cwd()).slice(0, 50),
+      env: {
+        VERCEL: process.env.VERCEL,
+        NODE_ENV: process.env.NODE_ENV
+      }
+    };
+    res.json({ success: true, debugInfo });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message, stack: err.stack });
+  }
+});
+
 app.get("/api/videos", (req, res) => {
   const db = getDb();
   res.json({ success: true, videos: db.videos });
@@ -1608,6 +1673,17 @@ async function autoExpandArchive() {
     console.log("Archive expansion and auto-matching complete!");
   }
 }
+
+// Global Express Error Handler
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("Express Global Error:", err);
+  res.status(500).json({
+    success: false,
+    error: err.message || String(err),
+    stack: err.stack,
+    message: "A server error occurred inside Express route"
+  });
+});
 
 if (!process.env.VERCEL) {
   startServer();
