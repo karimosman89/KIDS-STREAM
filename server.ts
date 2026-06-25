@@ -2,8 +2,6 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import http from "http";
-import { WebSocketServer, WebSocket } from "ws";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 
 // Shared Types Inline / Import
@@ -1270,7 +1268,8 @@ interface WatchPartyRoom {
 const watchPartyRooms = new Map<string, WatchPartyRoom>();
 const wsClients = new Map<any, { roomId: string; userId: string }>();
 
-function initWebSocketServer(httpServer: any) {
+async function initWebSocketServer(httpServer: any) {
+  const { WebSocketServer } = await import("ws");
   const wss = new WebSocketServer({ server: httpServer });
 
   wss.on("connection", (ws: any) => {
@@ -1495,7 +1494,7 @@ function initWebSocketServer(httpServer: any) {
   function broadcastToRoom(roomId: string, payload: any) {
     const serialized = JSON.stringify(payload);
     for (const [clientWs, meta] of wsClients.entries()) {
-      if (meta.roomId === roomId && clientWs.readyState === WebSocket.OPEN) {
+      if (meta.roomId === roomId && clientWs.readyState === 1) {
         clientWs.send(serialized);
       }
     }
@@ -1505,6 +1504,7 @@ function initWebSocketServer(httpServer: any) {
 // Vite Middleware integrate
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -1519,7 +1519,7 @@ async function startServer() {
   }
 
   const httpServer = http.createServer(app);
-  initWebSocketServer(httpServer);
+  await initWebSocketServer(httpServer);
 
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Kids Stream full-stack platform running on port ${PORT}`);
